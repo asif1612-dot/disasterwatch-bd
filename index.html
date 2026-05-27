@@ -323,69 +323,7 @@
     /* ── Map ─────────────────────────────────────────────────────── */
     #map { flex:1; border-left:1px solid var(--border); }
 
-    /* Alert level controls on map */
-    .alert-controls {
-      position: absolute;
-      top: 12px;
-      right: 50px;
-      z-index: 1000;
-      background: rgba(255, 255, 255, 0.95);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px;
-      display: flex;
-      gap: 6px;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .alert-btn {
-      padding: 8px 14px;
-      border-radius: 4px;
-      border: 1.5px solid;
-      background: #fff;
-      cursor: pointer;
-      font-family: var(--font-head);
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .alert-btn.red {
-      border-color: var(--red);
-      color: var(--red);
-    }
-    .alert-btn.red.active {
-      background: var(--red);
-      color: #fff;
-      box-shadow: 0 0 12px rgba(220, 38, 38, 0.3);
-    }
-
-    .alert-btn.orange {
-      border-color: var(--orange);
-      color: var(--orange);
-    }
-    .alert-btn.orange.active {
-      background: var(--orange);
-      color: #fff;
-      box-shadow: 0 0 12px rgba(249, 115, 22, 0.3);
-    }
-
-    .alert-btn.green {
-      border-color: var(--green);
-      color: var(--green);
-    }
-    .alert-btn.green.active {
-      background: var(--green);
-      color: #fff;
-      box-shadow: 0 0 12px rgba(22, 163, 74, 0.3);
-    }
-
-    .alert-btn:hover { opacity: 0.8; }
+    /* alert controls removed — using sidebar stat boxes for focus */
 
     #coords {
       position:absolute; bottom:32px; right:12px; z-index:1000;
@@ -589,11 +527,11 @@
       </div>
     </div>
 
-    <div class="stats-strip">
-      <div class="stat r"><div class="n" id="cnt-r">–</div><div class="l">Red</div></div>
-      <div class="stat o"><div class="n" id="cnt-o">–</div><div class="l">Orange</div></div>
-      <div class="stat g"><div class="n" id="cnt-g">–</div><div class="l">Green</div></div>
-    </div>
+      <div class="stats-strip">
+        <div class="stat r" onclick="focusSeverity('Red')"><div class="n" id="cnt-r">–</div><div class="l">Red</div></div>
+        <div class="stat o" onclick="focusSeverity('Orange')"><div class="n" id="cnt-o">–</div><div class="l">Orange</div></div>
+        <div class="stat g" onclick="focusSeverity('Green')"><div class="n" id="cnt-g">–</div><div class="l">Green</div></div>
+      </div>
 
     <div id="event-list">
       <div id="empty-msg">No events match your filter.</div>
@@ -603,20 +541,8 @@
   <!-- Map -->
   <div id="map"></div>
   
-  <!-- Alert Level Controls -->
-  <div class="alert-controls">
-    <button class="alert-btn red active" onclick="toggleAlertLevel('Red')" title="Show/hide Red alerts">
-      🔴 RED
-    </button>
-    <button class="alert-btn orange active" onclick="toggleAlertLevel('Orange')" title="Show/hide Orange alerts">
-      🟠 ORANGE
-    </button>
-    <button class="alert-btn green active" onclick="toggleAlertLevel('Green')" title="Show/hide Green alerts">
-      🟢 GREEN
-    </button>
-  </div>
-
   <div id="coords">LAT – | LNG –</div>
+  
 
     <!-- Loading -->
   <div id="loading">
@@ -718,7 +644,7 @@ const SAMPLE = [
 let events = [];
 let filter = 'ALL';
 let markers = L.layerGroup();
-let visibleAlerts = { Red: true, Orange: true, Green: true };
+let severityCycleIndex = { Red: 0, Orange: 0, Green: 0 };
 
 // ── Firebase init ─────────────────────────────────────────────
 let db;
@@ -840,16 +766,31 @@ function refreshData() {
   });
 }
 
-// ── Toggle alert levels on map ──────────────────────────────
-function toggleAlertLevel(level) {
-  visibleAlerts[level] = !visibleAlerts[level];
-  
-  // Update button state
-  const btn = document.querySelector(`.alert-btn.${level.toLowerCase()}`);
-  btn.classList.toggle('active');
-  
-  // Re-render markers
-  render();
+// ── Focus map on a severity level (clicking Red/Orange/Green stat)
+function focusSeverity(level) {
+  const matches = events.filter(e => e.alert === level);
+  if (!matches || matches.length === 0) {
+    alert(`No ${level} alerts available right now.`);
+    return;
+  }
+
+  // If only one event, fly to it and open popup
+  if (matches.length === 1) {
+    const e = matches[0];
+    map.flyTo([e.lat, e.lng], 8, { duration: 1.2 });
+    setTimeout(() => { if (e._marker) e._marker.openPopup(); }, 1200);
+    return;
+  }
+
+  // If multiple, fit bounds around all matching events
+  const bounds = L.latLngBounds(matches.map(m => [m.lat, m.lng]));
+  map.fitBounds(bounds.pad ? bounds.pad(0.25) : bounds, { padding: [50, 50] });
+
+  // Cycle through individual events on repeated clicks: open popup for the current index
+  const idx = severityCycleIndex[level] || 0;
+  const e = matches[idx % matches.length];
+  setTimeout(() => { if (e._marker) e._marker.openPopup(); }, 900);
+  severityCycleIndex[level] = (idx + 1) % matches.length;
 }
 
 // ── Render events ─────────────────────────────────────────────
@@ -901,6 +842,8 @@ function render() {
     `);
 
     markers.addLayer(m);
+    // attach marker to event so we can open its popup later
+    e._marker = m;
 
     // Create sidebar card with click handler
     const c = document.createElement('div');
