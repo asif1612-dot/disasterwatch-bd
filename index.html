@@ -333,6 +333,32 @@
       backdrop-filter:blur(6px);
     }
 
+    #map-legend {
+      position:absolute; top:16px; left:16px; z-index:1000;
+      background:rgba(255,255,255,0.95); border:1px solid var(--border);
+      box-shadow:0 14px 40px rgba(15,23,42,0.12);
+      border-radius:12px; padding:10px 12px;
+      font-family:var(--font-head); color:var(--text);
+      min-width:170px;
+    }
+    #map-legend .legend-title {
+      font-size:0.8rem; font-weight:800; letter-spacing:0.08em;
+      margin-bottom:8px; color:var(--cyan);
+    }
+    #map-legend .legend-items { display:grid; gap:6px; }
+    #map-legend .legend-item {
+      display:flex; align-items:center; gap:8px; padding:6px 8px;
+      border-radius:8px; background:var(--surface3); border:1px solid var(--border2);
+      font-size:0.78rem;
+    }
+    #map-legend .legend-mark { width:12px; height:12px; border-radius:50%; display:inline-block; flex-shrink:0; }
+    #map-legend .legend-all { background: linear-gradient(135deg, var(--cyan), var(--purple)); }
+    #map-legend .legend-tc  { background: var(--purple); }
+    #map-legend .legend-eq  { background: var(--red); }
+    #map-legend .legend-fl  { background: #29b6f6; }
+    #map-legend .legend-vo  { background: var(--orange); }
+    #map-legend .legend-wf  { background: var(--yellow); }
+
     /* ── Loading ─────────────────────────────────────────────────── */
     #loading {
       position:absolute; top:50%; left:calc(290px + 50%); transform:translate(-50%,-50%);
@@ -540,9 +566,19 @@
 
   <!-- Map -->
   <div id="map"></div>
+  <div id="map-legend">
+    <div class="legend-title">MAP SYMBOLOGY</div>
+    <div class="legend-items">
+      <div class="legend-item"><span class="legend-mark legend-all"></span> ⚡ ALL</div>
+      <div class="legend-item"><span class="legend-mark legend-tc"></span> 🌀 CYCLONE</div>
+      <div class="legend-item"><span class="legend-mark legend-eq"></span> 🔴 QUAKE</div>
+      <div class="legend-item"><span class="legend-mark legend-fl"></span> 💧 FLOOD</div>
+      <div class="legend-item"><span class="legend-mark legend-vo"></span> 🌋 VOLCANO</div>
+      <div class="legend-item"><span class="legend-mark legend-wf"></span> 🔥 WILDFIRE</div>
+    </div>
+  </div>
   
   <div id="coords">LAT – | LNG –</div>
-  
 
     <!-- Loading -->
   <div id="loading">
