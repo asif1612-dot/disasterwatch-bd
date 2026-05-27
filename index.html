@@ -8,9 +8,6 @@
   <!-- Leaflet CSS only here -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-  <!-- Google Font: Space Mono for data readouts, Barlow Condensed for labels -->
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
-
   <style>
     /* ── Design Tokens ─────────────────────────────────────────── */
     :root {
@@ -35,9 +32,9 @@
       --yellow:      #eab308;
       --purple:      #8b5cf6;
 
-      --font-head:  'Barlow Condensed', sans-serif;
-      --font-mono:  'Space Mono', monospace;
-      --font-body:  'IBM Plex Sans', sans-serif;
+      --font-head:  system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono:  ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+      --font-body:  system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
 
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -52,17 +49,8 @@
       overflow: hidden;
     }
 
-    /* ── Scanline / grid texture overlay ──────────────────────── */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background-image:
-        linear-gradient(rgba(15,23,42,0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(15,23,42,0.02) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 9999;
-    }
+    /* ── Removed grid texture overlay ─────────────────────────── */
+    /* The page now uses a clean, white background without the grid effect. */
 
     /* ── Emergency Notification Bar ────────────────────────────── */
     #notif-bar {
