@@ -502,6 +502,7 @@
   <div class="header-spacer"></div>
   <div id="time-display">—</div>
   <div class="live-pill"><div class="live-dot"></div><span id="live-label">LIVE</span></div>
+  <button class="admin-btn" onclick="refreshData()" title="Refresh GDACS data">🔄 REFRESH</button>
   <button class="admin-btn" onclick="openModal()">🔐 ADMIN</button>
 </div>
 
@@ -511,7 +512,9 @@
   <!-- Sidebar -->
   <div id="sidebar">
     <div class="sidebar-section">
-      <input id="search" type="text" placeholder="Search events, countries…" oninput="render()"/>
+      <input id="search" type="text" placeholder="Search events, countries…" 
+        oninput="render()" 
+        onkeydown="if(event.key==='Enter') searchEvents()"/>
       <div class="filter-grid">
         <button class="f-btn on" data-t="ALL" onclick="setFilter('ALL')">⚡ ALL</button>
         <button class="f-btn"    data-t="TC"  onclick="setFilter('TC')">🌀 CYCLONE</button>
@@ -537,10 +540,10 @@
   <div id="map"></div>
   <div id="coords">LAT – | LNG –</div>
 
-  <!-- Loading -->
+    <!-- Loading -->
   <div id="loading">
     <div class="spinner"></div>
-    <p>Fetching GDACS live feed…</p>
+    <p id="loading-text">Fetching GDACS live feed…</p>
   </div>
 
 </div>
@@ -679,15 +682,44 @@ fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/coun
 
 // ── Load GDACS ────────────────────────────────────────────────
 async function loadGDACS() {
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('loading-text').textContent = 'Fetching GDACS live feed…';
+  
   try {
-    const proxy = 'https://corsproxy.io/?';
-    const api   = 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH';
-    const res   = await fetch(proxy + encodeURIComponent(api),
-                    { signal: AbortSignal.timeout(9000) });
-    const data  = await res.json();
-    const feats = (data.features || []).filter(f => f.geometry?.coordinates);
+    // Try multiple CORS proxies in sequence
+    const proxies = [
+      { name: 'corsproxy.io', url: 'https://corsproxy.io/?' },
+      { name: 'allorigins.win', url: 'https://api.allorigins.win/raw?url=' }
+    ];
+    const api = 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH';
+    
+    let data, feats;
+    let success = false;
 
-    if (feats.length < 3) throw new Error('Insufficient data');
+    for (const proxy of proxies) {
+      try {
+        console.log(`Trying ${proxy.name}...`);
+        document.getElementById('loading-text').textContent = `Connecting via ${proxy.name}…`;
+        
+        const res = await fetch(proxy.url + encodeURIComponent(api),
+          { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+        feats = (data.features || []).filter(f => f.geometry?.coordinates);
+        
+        if (feats.length >= 2) {
+          success = true;
+          console.log(`✓ Loaded ${feats.length} events from ${proxy.name}`);
+          break;
+        }
+      } catch (e) {
+        console.warn(`✗ ${proxy.name} failed:`, e.message);
+      }
+    }
+
+    if (!success || !feats || feats.length < 2) {
+      throw new Error('Insufficient GDACS data');
+    }
 
     events = feats.map(f => ({
       name:    f.properties.name || f.properties.eventtype || '—',
@@ -697,11 +729,17 @@ async function loadGDACS() {
       lat:     f.geometry.coordinates[1],
       lng:     f.geometry.coordinates[0],
       date:    (f.properties.fromdate || '').slice(0,10),
-      info:    f.properties.description || '',
+      info:    f.properties.description || 'No description available',
       url:     f.properties.url?.report || null
     }));
 
-  } catch {
+    document.getElementById('live-label').textContent = 'LIVE';
+    document.querySelector('.live-dot').style.background = 'var(--green)';
+
+  } catch (e) {
+    console.error('GDACS fetch failed:', e.message);
+    document.getElementById('loading-text').textContent = 'Loading sample data (demo mode)…';
+    
     events = SAMPLE;
     document.getElementById('live-label').textContent = 'DEMO';
     document.querySelector('.live-dot').style.background = 'var(--orange)';
@@ -709,6 +747,18 @@ async function loadGDACS() {
 
   render();
   document.getElementById('loading').style.display = 'none';
+}
+
+function refreshData() {
+  const btn = event.target.closest('button');
+  btn.style.opacity = '0.6';
+  btn.style.cursor = 'wait';
+  btn.disabled = true;
+  loadGDACS().finally(() => {
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+    btn.disabled = false;
+  });
 }
 
 // ── Render events ─────────────────────────────────────────────
@@ -734,9 +784,12 @@ function render() {
     const icon = H_ICON[e.type]    || '⚠️';
     const r    = e.alert==='Red' ? 12 : e.alert==='Orange' ? 9 : 7;
 
+    // Create map marker
     const m = L.circleMarker([e.lat, e.lng], {
       radius: r, fillColor: col, color:'#fff',
       weight: 1.5, opacity:1, fillOpacity:0.88
+    }).on('click', () => {
+      document.querySelectorAll('.e-card').forEach(card => card.style.background = '');
     }).bindPopup(`
       <div style="font-family:'IBM Plex Sans',sans-serif;min-width:210px;padding:4px 0">
         <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${icon} ${e.name}</div>
@@ -747,16 +800,18 @@ function render() {
         <div style="font-size:0.8rem;color:#888;margin-bottom:4px">📍 ${e.country}</div>
         <div style="font-size:0.8rem;margin-bottom:6px;line-height:1.4">${e.info}</div>
         <div style="font-size:0.7rem;color:#666">📅 ${e.date}</div>
+        <div style="font-size:0.7rem;color:#666">🧭 Lat: ${e.lat.toFixed(4)}, Lng: ${e.lng.toFixed(4)}</div>
         ${e.url ? `<br><a href="${e.url}" target="_blank"
-          style="font-size:0.78rem;color:#00d4ff">🔗 View GDACS Report →</a>` : ''}
+          style="font-size:0.78rem;color:#00d4ff;text-decoration:none">🔗 View GDACS Report →</a>` : ''}
       </div>
     `);
 
     markers.addLayer(m);
 
-    // Sidebar card
+    // Create sidebar card with click handler
     const c = document.createElement('div');
     c.className = `e-card ${e.alert}`;
+    c.style.cursor = 'pointer';
     c.innerHTML = `
       <div class="e-row1">
         <span class="e-icon">${icon}</span>
@@ -768,10 +823,32 @@ function render() {
         <span>📅 ${e.date}</span>
       </div>
     `;
-    c.addEventListener('click', () => {
+    
+    c.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      // Highlight the card
+      document.querySelectorAll('.e-card').forEach(card => card.style.opacity = '0.6');
+      c.style.opacity = '1';
+      // Fly to location on map
       map.flyTo([e.lat, e.lng], 8, { duration:1.2 });
-      setTimeout(() => m.openPopup(), 1300);
+      // Open popup after flight
+      setTimeout(() => {
+        m.openPopup([e.lat, e.lng]);
+      }, 1300);
     });
+    
+    c.addEventListener('mouseover', () => {
+      if (c.style.opacity !== '1') {
+        c.style.opacity = '0.8';
+      }
+    });
+    
+    c.addEventListener('mouseout', () => {
+      if (c.style.opacity !== '1') {
+        c.style.opacity = '0.6';
+      }
+    });
+    
     list.appendChild(c);
   });
 }
@@ -780,7 +857,23 @@ function setFilter(t) {
   filter = t;
   document.querySelectorAll('.f-btn').forEach(b =>
     b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('.e-card').forEach(card => card.style.opacity = '1');
   render();
+}
+
+// ── Search functionality ────────────────────────────────────
+function searchEvents() {
+  const q = document.getElementById('search').value.toLowerCase().trim();
+  if (!q) return;
+  
+  const matching = events.filter(e =>
+    e.name.toLowerCase().includes(q) || e.country.toLowerCase().includes(q)
+  );
+  
+  if (matching.length > 0) {
+    const e = matching[0];
+    map.flyTo([e.lat, e.lng], 8, { duration:1.2 });
+  }
 }
 
 // ── Firebase announcements ────────────────────────────────────
