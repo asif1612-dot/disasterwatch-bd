@@ -645,6 +645,8 @@ let events = [];
 let filter = 'ALL';
 let markers = L.layerGroup();
 let severityCycleIndex = { Red: 0, Orange: 0, Green: 0 };
+let rawGDACS = [];
+let gdacsLayer = L.layerGroup();
 
 // ── Firebase init ─────────────────────────────────────────────
 let db;
@@ -738,6 +740,9 @@ async function loadGDACS() {
       url:     f.properties.url?.report || null
     }));
 
+    // Keep raw GDACS features (geometry + properties) for full symbology
+    rawGDACS = feats;
+
     document.getElementById('live-label').textContent = 'LIVE';
     document.querySelector('.live-dot').style.background = 'var(--green)';
 
@@ -768,25 +773,41 @@ function refreshData() {
 
 // ── Focus map on a severity level (clicking Red/Orange/Green stat)
 function focusSeverity(level) {
-  const matches = events.filter(e => e.alert === level);
-  if (!matches || matches.length === 0) {
-    alert(`No ${level} alerts available right now.`);
+  // Prefer raw GDACS features when available (full geometry & symbology)
+  if (filter === 'ALL' && rawGDACS && rawGDACS.length) {
+    const matches = rawGDACS.filter(f => (f.properties.alertlevel || '').toLowerCase() === level.toLowerCase());
+    if (!matches || matches.length === 0) { alert(`No ${level} alerts available right now.`); return; }
+    if (matches.length === 1) {
+      const f = matches[0];
+      const coords = f.geometry.coordinates;
+      const latlng = [coords[1] || coords[0], coords[0] || coords[1]];
+      map.flyTo(latlng, 8, { duration: 1.2 });
+      setTimeout(() => { if (f._marker) f._marker.openPopup(); }, 1200);
+      return;
+    }
+    const bounds = L.latLngBounds(matches.map(m => {
+      const c = m.geometry.coordinates;
+      return [c[1] || c[0], c[0] || c[1]];
+    }));
+    map.fitBounds(bounds.pad ? bounds.pad(0.25) : bounds, { padding: [50,50] });
+    const idx = severityCycleIndex[level] || 0;
+    const f = matches[idx % matches.length];
+    setTimeout(() => { if (f._marker) f._marker.openPopup(); }, 900);
+    severityCycleIndex[level] = (idx + 1) % matches.length;
     return;
   }
 
-  // If only one event, fly to it and open popup
+  // Fallback to local events array
+  const matches = events.filter(e => e.alert === level);
+  if (!matches || matches.length === 0) { alert(`No ${level} alerts available right now.`); return; }
   if (matches.length === 1) {
     const e = matches[0];
     map.flyTo([e.lat, e.lng], 8, { duration: 1.2 });
     setTimeout(() => { if (e._marker) e._marker.openPopup(); }, 1200);
     return;
   }
-
-  // If multiple, fit bounds around all matching events
   const bounds = L.latLngBounds(matches.map(m => [m.lat, m.lng]));
   map.fitBounds(bounds.pad ? bounds.pad(0.25) : bounds, { padding: [50, 50] });
-
-  // Cycle through individual events on repeated clicks: open popup for the current index
   const idx = severityCycleIndex[level] || 0;
   const e = matches[idx % matches.length];
   setTimeout(() => { if (e._marker) e._marker.openPopup(); }, 900);
@@ -794,8 +815,58 @@ function focusSeverity(level) {
 }
 
 // ── Render events ─────────────────────────────────────────────
+// Render raw GDACS GeoJSON features with symbology
+function renderGDACSLayer() {
+  gdacsLayer.clearLayers();
+  if (!rawGDACS || !rawGDACS.length) return;
+
+  const gj = L.geoJSON(rawGDACS, {
+    style: f => {
+      const a = (f.properties.alertlevel || 'Green');
+      const color = H_COLOR[a] || H_COLOR.Green;
+      return { color: color, weight: 2, fillColor: color + '22', fillOpacity: 0.18 };
+    },
+    pointToLayer: (f, latlng) => {
+      const a = (f.properties.alertlevel || 'Green');
+      const col = H_COLOR[a] || H_COLOR.Green;
+      const r = a === 'Red' ? 12 : a === 'Orange' ? 9 : 7;
+      const m = L.circleMarker(latlng, { radius: r, fillColor: col, color: '#fff', weight: 1.5, fillOpacity: 0.92 });
+      f._marker = m;
+      return m;
+    },
+    onEachFeature: (f, layer) => {
+      const p = f.properties || {};
+      const name = p.name || p.eventtype || 'GDACS event';
+      const alert = p.alertlevel || 'Green';
+      const info = p.description || '';
+      const url = (p.url && (p.url.report || p.url)) || null;
+      layer.bindPopup(`
+        <div style="font-family:'IBM Plex Sans',sans-serif;min-width:210px;padding:6px 0">
+          <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${name}</div>
+          <div style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:0.72rem;
+            font-weight:700;background:${H_COLOR[alert] || '#00e676'}22;color:${H_COLOR[alert] || '#00e676'};border:1px solid ${H_COLOR[alert] || '#00e676'};margin-bottom:8px">
+            ● ${alert.toUpperCase()} ALERT
+          </div>
+          <div style="font-size:0.8rem;color:#888;margin-bottom:6px">${info}</div>
+          <div style="font-size:0.7rem;color:#666">${url ? `<a href='${url}' target='_blank'>GDACS report</a>` : ''}</div>
+        </div>
+      `);
+      layer.on('click', () => {
+        // store reference for programmatic popup control
+        f._marker = layer;
+      });
+    }
+  });
+
+  gdacsLayer.addLayer(gj);
+  if (!map.hasLayer(gdacsLayer)) gdacsLayer.addTo(map);
+  try { map.fitBounds(gj.getBounds().pad ? gj.getBounds().pad(0.18) : gj.getBounds(), { padding: [50, 50] }); } catch(e) {}
+}
+
 function render() {
   markers.clearLayers();
+  // Clear previous GDACS layer visuals unless we're about to render them
+  if (gdacsLayer) gdacsLayer.clearLayers();
   const q = document.getElementById('search').value.toLowerCase().trim();
 
   const shown = events.filter(e =>
@@ -811,16 +882,19 @@ function render() {
   list.innerHTML = '';
   document.getElementById('empty-msg').style.display = shown.length ? 'none' : 'block';
 
+  // If ALL filter is active and we have raw GDACS features, render the GeoJSON symbology
+  if (filter === 'ALL' && rawGDACS && rawGDACS.length) {
+    renderGDACSLayer();
+  }
+
   shown.forEach(e => {
     const col  = H_COLOR[e.alert]  || '#00e676';
     const icon = H_ICON[e.type]    || '⚠️';
     const r    = e.alert==='Red' ? 12 : e.alert==='Orange' ? 9 : 7;
-
-    // Check if this alert level should be visible
-    if (!visibleAlerts[e.alert]) return;
-
-    // Create map marker
-    const m = L.circleMarker([e.lat, e.lng], {
+    // Create map marker (unless we're showing GDACS GeoJSON for ALL)
+    let m = null;
+    if (!(filter === 'ALL' && rawGDACS && rawGDACS.length)) {
+      m = L.circleMarker([e.lat, e.lng], {
       radius: r, fillColor: col, color:'#fff',
       weight: 1.5, opacity:1, fillOpacity:0.88
     }).on('click', () => {
@@ -841,9 +915,14 @@ function render() {
       </div>
     `);
 
-    markers.addLayer(m);
-    // attach marker to event so we can open its popup later
-    e._marker = m;
+      markers.addLayer(m);
+      // attach marker to event so we can open its popup later
+      e._marker = m;
+    } else {
+      // try to find matching raw GDACS feature and attach its marker for popup control
+      const match = rawGDACS.find(f => (f.properties && (f.properties.name === e.name || f.properties.eventtype === e.type)));
+      if (match) e._marker = match._marker || null;
+    }
 
     // Create sidebar card with click handler
     const c = document.createElement('div');
