@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DisasterWatch BD — Multi-Hazard Early Warning Dashboard</title>
+
+  <!-- Leaflet CSS only here -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <!-- Google Font: Space Mono for data readouts, Barlow Condensed for labels -->
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+
+  <style>
+    /* ── Design Tokens ─────────────────────────────────────────── */
+    :root {
+      --bg:          #080c14;
+      --surface:     #0d1320;
+      --surface2:    #111827;
+      --surface3:    #1a2236;
+      --border:      #1f2d45;
+      --border2:     #2d3f5a;
+      --text:        #d4dce8;
+      --text-muted:  #5a7399;
+      --text-dim:    #3a5070;
+
+      --red:         #ff3b3b;
+      --red-glow:    rgba(255,59,59,0.25);
+      --orange:      #ff8c00;
+      --orange-glow: rgba(255,140,0,0.2);
+      --green:       #00e676;
+      --green-glow:  rgba(0,230,118,0.2);
+      --cyan:        #00d4ff;
+      --cyan-glow:   rgba(0,212,255,0.15);
+      --yellow:      #ffd600;
+      --purple:      #b465ff;
+
+      --font-head:  'Barlow Condensed', sans-serif;
+      --font-mono:  'Space Mono', monospace;
+      --font-body:  'IBM Plex Sans', sans-serif;
+    }
+
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Scanline / grid texture overlay ──────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.015) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 9999;
+    }
+
+    /* ── Emergency Notification Bar ────────────────────────────── */
+    #notif-bar {
+      display: none;
+      align-items: center;
+      gap: 14px;
+      padding: 11px 20px;
+      font-family: var(--font-head);
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      z-index: 5000;
+      flex-shrink: 0;
+      border-bottom: 1px solid;
+      animation: slideDown 0.35s cubic-bezier(.22,.68,0,1.2);
+    }
+    #notif-bar.info     { background: rgba(0,212,255,0.12); border-color: var(--cyan); color: var(--cyan); }
+    #notif-bar.warning  { background: rgba(255,140,0,0.15); border-color: var(--orange); color: var(--orange); }
+    #notif-bar.critical {
+      background: rgba(255,59,59,0.18); border-color: var(--red); color: var(--red);
+      animation: slideDown 0.35s ease, criticalPulse 2s infinite 0.35s;
+    }
+    @keyframes slideDown { from { transform: translateY(-100%); opacity:0; } to { transform: translateY(0); opacity:1; } }
+    @keyframes criticalPulse { 0%,100% { background:rgba(255,59,59,0.18); } 50% { background:rgba(255,59,59,0.3); } }
+
+    .notif-dot { width:9px; height:9px; border-radius:50%; background:currentColor; flex-shrink:0;
+      box-shadow:0 0 8px currentColor; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+    .notif-label { font-size:0.7rem; opacity:0.7; letter-spacing:0.1em; }
+    .notif-msg   { flex:1; }
+    .notif-time  { font-family:var(--font-mono); font-size:0.72rem; opacity:0.6; }
+    .notif-close { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+      color:inherit; padding:3px 12px; border-radius:3px; cursor:pointer;
+      font-family:var(--font-head); font-size:0.78rem; transition:background .2s; }
+    .notif-close:hover { background:rgba(255,255,255,0.18); }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    #header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 18px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    #header::after {
+      content: '';
+      position: absolute; bottom:0; left:0; right:0; height:1px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      opacity: 0.4;
+    }
+
+    .logo-mark {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(0,212,255,0.05));
+      border: 1px solid rgba(0,212,255,0.4);
+      border-radius: 6px;
+      display: flex; align-items:center; justify-content:center;
+      font-size: 1.1rem;
+      box-shadow: 0 0 12px rgba(0,212,255,0.2);
+    }
+
+    .brand h1 {
+      font-family: var(--font-head);
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: #fff;
+      line-height: 1;
+    }
+    .brand h1 span { color: var(--cyan); }
+    .brand .sub {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    .header-spacer { flex:1; }
+
+    .live-pill {
+      display: flex; align-items:center; gap:7px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(0,230,118,0.4);
+      background: rgba(0,230,118,0.08);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--green);
+      letter-spacing: 0.05em;
+    }
+    .live-dot { width:7px; height:7px; background:var(--green); border-radius:50%;
+      box-shadow:0 0 6px var(--green); animation:blink 1.5s infinite; }
+
+    #time-display {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+    }
+
+    .admin-btn {
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      color: var(--text-muted);
+      padding: 7px 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-family: var(--font-head);
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      transition: all 0.2s;
+    }
+    .admin-btn:hover { border-color: var(--cyan); color: var(--cyan);
+      background: rgba(0,212,255,0.06); box-shadow:0 0 10px rgba(0,212,255,0.1); }
+
+    /* ── App layout ──────────────────────────────────────────────── */
+    #app { display:flex; flex:1; overflow:hidden; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────── */
+    #sidebar {
+      width: 290px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-section {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #search {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      border-radius: 5px;
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #search:focus { border-color: var(--cyan); box-shadow:0 0 0 2px rgba(0,212,255,0.08); }
+    #search::placeholder { color: var(--text-dim); }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    .f-btn {
+      padding: 5px 0;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      background: var(--surface3);
+      color: var(--text-muted);
+      font-family: var(--font-head);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+    }
+    .f-btn:hover { color:var(--text); background:var(--border); }
+    .f-btn[data-t="ALL"].on  { border-color:var(--cyan);   color:var(--cyan);   background:rgba(0,212,255,0.08); }
+    .f-btn[data-t="TC"].on   { border-color:var(--purple); color:var(--purple); background:rgba(180,101,255,0.08); }
+    .f-btn[data-t="EQ"].on   { border-color:var(--red);    color:var(--red);    background:var(--red-glow); }
+    .f-btn[data-t="FL"].on   { border-color:#29b6f6;       color:#29b6f6;       background:rgba(41,182,246,0.08); }
+    .f-btn[data-t="VO"].on   { border-color:var(--orange); color:var(--orange); background:var(--orange-glow); }
+    .f-btn[data-t="WF"].on   { border-color:var(--yellow); color:var(--yellow); background:rgba(255,214,0,0.08); }
+
+    /* Stats strip */
+    .stats-strip {
+      display: flex;
+      padding: 10px 14px;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat {
+      flex: 1;
+      text-align: center;
+      background: var(--surface3);
+      border-radius: 5px;
+      padding: 7px 4px;
+      border: 1px solid var(--border);
+    }
+    .stat .n { font-family:var(--font-mono); font-size:1.2rem; font-weight:700; }
+    .stat .l { font-size:0.62rem; color:var(--text-muted); text-transform:uppercase;
+      letter-spacing:0.06em; margin-top:1px; font-family:var(--font-head); }
+    .stat.r .n { color:var(--red); text-shadow:0 0 8px var(--red); }
+    .stat.o .n { color:var(--orange); text-shadow:0 0 8px var(--orange); }
+    .stat.g .n { color:var(--green); text-shadow:0 0 8px var(--green); }
+
+    #event-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    #event-list::-webkit-scrollbar { width: 3px; }
+    #event-list::-webkit-scrollbar-track { background:transparent; }
+    #event-list::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+
+    .e-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      border-left: 3px solid;
+      transition: background 0.15s, border-color 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .e-card::before {
+      content:''; position:absolute; inset:0;
+      background:linear-gradient(90deg, rgba(255,255,255,0.02), transparent);
+      pointer-events:none;
+    }
+    .e-card:hover { background:#162030; }
+    .e-card.Red    { border-left-color:var(--red); }
+    .e-card.Orange { border-left-color:var(--orange); }
+    .e-card.Green  { border-left-color:var(--green); }
+
+    .e-row1 { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
+    .e-icon { font-size:0.95rem; }
+    .e-name { font-family:var(--font-head); font-size:0.9rem; font-weight:700; flex:1;
+      letter-spacing:0.02em; line-height:1.2; }
+    .badge {
+      font-family:var(--font-head); font-size:0.62rem; font-weight:700;
+      letter-spacing:0.08em; padding:2px 8px; border-radius:3px; text-transform:uppercase;
+    }
+    .badge.Red    { background:var(--red-glow);    color:var(--red);    border:1px solid var(--red); }
+    .badge.Orange { background:var(--orange-glow); color:var(--orange); border:1px solid var(--orange); }
+    .badge.Green  { background:var(--green-glow);  color:var(--green);  border:1px solid var(--green); }
+
+    .e-meta { font-size:0.73rem; color:var(--text-muted); display:flex; gap:10px; }
+
+    #empty-msg {
+      text-align:center; padding:28px 16px;
+      font-family:var(--font-mono); font-size:0.75rem; color:var(--text-dim);
+      display:none;
+    }
+
+    /* ── Map ─────────────────────────────────────────────────────── */
+    #map { flex:1; }
+
+    #coords {
+      position:absolute; bottom:32px; right:12px; z-index:1000;
+      background:rgba(8,12,20,0.88); border:1px solid var(--border);
+      color:var(--text-muted); padding:5px 12px; border-radius:4px;
+      font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.04em;
+      backdrop-filter:blur(6px);
+    }
+
+    /* ── Loading ─────────────────────────────────────────────────── */
+    #loading {
+      position:absolute; top:50%; left:calc(290px + 50%); transform:translate(-50%,-50%);
+      z-index:2000; background:rgba(8,12,20,0.95); border:1px solid var(--border);
+      border-radius:10px; padding:24px 32px; text-align:center;
+      backdrop-filter:blur(8px);
+    }
+    .spinner {
+      width:32px; height:32px; border:2px solid var(--border2);
+      border-top-color:var(--cyan); border-radius:50%;
+      animation:spin .7s linear infinite; margin:0 auto 12px;
+    }
+    @keyframes spin { to{transform:rotate(360deg);} }
+    #loading p { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); }
+
+    /* ── Password Modal ──────────────────────────────────────────── */
+    #overlay {
+      display:none; position:fixed; inset:0;
+      background:rgba(0,0,0,0.75); z-index:6000;
+      align-items:center; justify-content:center;
+      backdrop-filter:blur(6px);
+    }
+    #overlay.on { display:flex; }
+
+    #pw-modal {
+      background:var(--surface);
+      border:1px solid var(--border2);
+      border-radius:10px; padding:28px; width:360px;
+      box-shadow:0 0 40px rgba(0,0,0,0.6), 0 0 80px rgba(0,212,255,0.04);
+      animation:modalIn .25s ease;
+    }
+    @keyframes modalIn { from{transform:scale(.94);opacity:0;} to{transform:scale(1);opacity:1;} }
+
+    #pw-modal h2 {
+      font-family:var(--font-head); font-size:1.2rem; font-weight:800;
+      color:var(--cyan); letter-spacing:0.05em; margin-bottom:5px;
+    }
+    #pw-modal p { font-size:0.8rem; color:var(--text-muted); margin-bottom:18px; line-height:1.5; }
+
+    .field-label { font-size:0.75rem; color:var(--text-muted); margin-bottom:5px;
+      font-family:var(--font-head); letter-spacing:0.06em; text-transform:uppercase; }
+    .field-input {
+      width:100%; padding:10px 13px;
+      background:var(--surface3); border:1px solid var(--border2);
+      border-radius:5px; color:var(--text); font-family:var(--font-mono);
+      font-size:0.85rem; outline:none; transition:border-color .2s;
+    }
+    .field-input:focus { border-color:var(--cyan); box-shadow:0 0 0 2px rgba(0,212,255,0.1); }
+
+    #pw-error { color:var(--red); font-size:0.77rem; margin-top:8px; display:none;
+      font-family:var(--font-mono); }
+
+    .modal-btns { display:flex; gap:8px; margin-top:18px; }
+    .btn-c { flex:1; padding:10px; border-radius:5px; border:none;
+      cursor:pointer; font-family:var(--font-head); font-size:0.88rem;
+      font-weight:700; letter-spacing:0.04em; transition:opacity .2s; }
+    .btn-c:hover { opacity:.82; }
+    .btn-cancel  { background:var(--surface3); color:var(--text-muted);
+      border:1px solid var(--border2); }
+    .btn-login   { background:var(--cyan); color:#080c14; }
+
+    /* ── Admin Panel (slide-in) ───────────────────────────────────── */
+    #admin-panel {
+      position:fixed; top:0; right:-400px; width:380px; height:100vh;
+      background:var(--surface); border-left:1px solid var(--border2);
+      z-index:5000; transition:right .3s cubic-bezier(.22,.68,0,1.1);
+      display:flex; flex-direction:column; overflow:hidden;
+    }
+    #admin-panel.open { right:0; box-shadow:-20px 0 60px rgba(0,0,0,0.5); }
+
+    #ap-header {
+      padding:16px; border-bottom:1px solid var(--border);
+      background:rgba(255,59,59,0.05);
+      display:flex; align-items:center; gap:10px;
+    }
+    #ap-header .ap-icon { font-size:1.2rem; }
+    #ap-header h2 { flex:1; font-family:var(--font-head); font-size:1rem;
+      font-weight:800; color:var(--red); letter-spacing:0.05em; }
+    #ap-close { background:none; border:none; color:var(--text-muted);
+      font-size:1.2rem; cursor:pointer; padding:4px; transition:color .2s; }
+    #ap-close:hover { color:var(--text); }
+
+    #ap-body { flex:1; overflow-y:auto; padding:18px; }
+    #ap-body::-webkit-scrollbar { width:3px; }
+    #ap-body::-webkit-scrollbar-thumb { background:var(--border2); }
+
+    .ap-section-title {
+      font-family:var(--font-head); font-size:0.72rem; font-weight:700;
+      text-transform:uppercase; letter-spacing:0.1em; color:var(--text-muted);
+      margin-bottom:12px;
+    }
+
+    #sev-sel {
+      width:100%; padding:9px 12px; margin-bottom:10px;
+      background:var(--surface3); border:1px solid var(--border2);
+      border-radius:5px; color:var(--text); font-family:var(--font-body);
+      font-size:0.83rem; outline:none; cursor:pointer;
+    }
+    #sev-sel:focus { border-color:var(--cyan); }
+
+    #ap-msg {
+      width:100%; min-height:100px; padding:10px 13px;
+      background:var(--surface3); border:1px solid var(--border2);
+      border-radius:5px; color:var(--text); font-family:var(--font-body);
+      font-size:0.83rem; outline:none; resize:vertical; line-height:1.5;
+    }
+    #ap-msg:focus { border-color:var(--cyan); }
+    #ap-msg::placeholder { color:var(--text-dim); }
+
+    #char-c { text-align:right; font-family:var(--font-mono);
+      font-size:0.68rem; color:var(--text-muted); margin-top:4px; }
+
+    .btn-broadcast {
+      width:100%; padding:11px; margin-top:12px;
+      background:linear-gradient(135deg, #c0392b, #e74c3c);
+      border:none; border-radius:5px; color:#fff;
+      font-family:var(--font-head); font-size:0.95rem; font-weight:800;
+      letter-spacing:0.08em; cursor:pointer;
+      box-shadow:0 4px 15px rgba(231,76,60,0.3);
+      transition:all .2s;
+    }
+    .btn-broadcast:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(231,76,60,0.4); }
+    .btn-broadcast:active { transform:translateY(0); }
+
+    .divider { border:none; border-top:1px solid var(--border);
+      margin:22px 0; }
+
+    /* Past announcements */
+    .pa {
+      background:var(--surface2); border:1px solid var(--border);
+      border-radius:6px; padding:10px 12px; margin-bottom:8px;
+      border-left:3px solid; font-size:0.8rem; line-height:1.5;
+    }
+    .pa.info     { border-left-color:#29b6f6; }
+    .pa.warning  { border-left-color:var(--orange); }
+    .pa.critical { border-left-color:var(--red); }
+    .pa-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+    .pa-sev { font-family:var(--font-head); font-size:0.7rem; font-weight:700;
+      text-transform:uppercase; letter-spacing:0.06em; }
+    .pa-sev.info    { color:#29b6f6; }
+    .pa-sev.warning { color:var(--orange); }
+    .pa-sev.critical{ color:var(--red); }
+    .pa-ts { font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted); }
+    .pa-del { background:none; border:none; color:var(--text-dim);
+      cursor:pointer; font-size:0.78rem; padding:0 2px; transition:color .15s; }
+    .pa-del:hover { color:var(--red); }
+    .pa-txt { color:var(--text); }
+    .no-history { font-family:var(--font-mono); font-size:0.73rem; color:var(--text-dim); text-align:center; padding:12px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Notification Bar ───────────────────────────────────────────── -->
+<div id="notif-bar">
+  <div class="notif-dot"></div>
+  <span id="n-label" class="notif-label">EMERGENCY ALERT</span>
+  <span id="n-msg"   class="notif-msg">—</span>
+  <span id="n-time"  class="notif-time">—</span>
+  <button class="notif-close" onclick="dismissNotif()">✕ DISMISS</button>
+</div>
+
+<!-- ── Header ─────────────────────────────────────────────────────── -->
+<div id="header">
+  <div class="logo-mark">🌐</div>
+  <div class="brand">
+    <h1>DISASTER<span>WATCH</span> BD</h1>
+    <div class="sub">MULTI-HAZARD EARLY WARNING SYSTEM · POWERED BY GDACS</div>
+  </div>
+  <div class="header-spacer"></div>
+  <div id="time-display">—</div>
+  <div class="live-pill"><div class="live-dot"></div><span id="live-label">LIVE</span></div>
+  <button class="admin-btn" onclick="openModal()">🔐 ADMIN</button>
+</div>
+
+<!-- ── Main App ───────────────────────────────────────────────────── -->
+<div id="app">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <input id="search" type="text" placeholder="Search events, countries…" oninput="render()"/>
+      <div class="filter-grid">
+        <button class="f-btn on" data-t="ALL" onclick="setFilter('ALL')">⚡ ALL</button>
+        <button class="f-btn"    data-t="TC"  onclick="setFilter('TC')">🌀 CYCLONE</button>
+        <button class="f-btn"    data-t="EQ"  onclick="setFilter('EQ')">🔴 QUAKE</button>
+        <button class="f-btn"    data-t="FL"  onclick="setFilter('FL')">💧 FLOOD</button>
+        <button class="f-btn"    data-t="VO"  onclick="setFilter('VO')">🌋 VOLCANO</button>
+        <button class="f-btn"    data-t="WF"  onclick="setFilter('WF')">🔥 WILDFIRE</button>
+      </div>
+    </div>
+
+    <div class="stats-strip">
+      <div class="stat r"><div class="n" id="cnt-r">–</div><div class="l">Red</div></div>
+      <div class="stat o"><div class="n" id="cnt-o">–</div><div class="l">Orange</div></div>
+      <div class="stat g"><div class="n" id="cnt-g">–</div><div class="l">Green</div></div>
+    </div>
+
+    <div id="event-list">
+      <div id="empty-msg">No events match your filter.</div>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div id="map"></div>
+  <div id="coords">LAT – | LNG –</div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Fetching GDACS live feed…</p>
+  </div>
+
+</div>
+
+<!-- ── Password Modal ─────────────────────────────────────────────── -->
+<div id="overlay">
+  <div id="pw-modal">
+    <h2>🛡 ADMIN ACCESS</h2>
+    <p>Enter the administrator password to access the Emergency Broadcast panel.</p>
+    <div class="field-label">Password</div>
+    <input class="field-input" type="password" id="pw-input" placeholder="••••••••••"
+      onkeydown="if(event.key==='Enter') tryLogin()"/>
+    <div id="pw-error">⚠ Incorrect password. Access denied.</div>
+    <div class="modal-btns">
+      <button class="btn-c btn-cancel" onclick="closeModal()">CANCEL</button>
+      <button class="btn-c btn-login"  onclick="tryLogin()">ENTER</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Admin Panel ─────────────────────────────────────────────────── -->
+<div id="admin-panel">
+  <div id="ap-header">
+    <span class="ap-icon">🚨</span>
+    <h2>EMERGENCY BROADCAST</h2>
+    <button id="ap-close" onclick="closeAdmin()">✕</button>
+  </div>
+  <div id="ap-body">
+    <div class="ap-section-title">Post New Announcement</div>
+
+    <div class="field-label" style="margin-bottom:5px">Severity Level</div>
+    <select id="sev-sel">
+      <option value="info">ℹ️  INFORMATION — General situational update</option>
+      <option value="warning">⚠️  WARNING — Elevated risk, take precautions</option>
+      <option value="critical">🚨  CRITICAL — Immediate action required</option>
+    </select>
+
+    <div class="field-label" style="margin-bottom:5px">Broadcast Message</div>
+    <textarea id="ap-msg" maxlength="280"
+      placeholder="Type your emergency message here. This will appear live for all users visiting the dashboard…"
+      oninput="document.getElementById('char-c').textContent=this.value.length+'/280'"></textarea>
+    <div id="char-c">0/280</div>
+
+    <button class="btn-broadcast" onclick="broadcast()">📢 BROADCAST TO ALL USERS</button>
+
+    <hr class="divider"/>
+
+    <div class="ap-section-title">Broadcast History</div>
+    <div id="hist-list"><div class="no-history">No announcements yet.</div></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+//  🔥 FIREBASE CONFIG
+//  Replace these values with your own from Firebase Console
+//  Steps: console.firebase.google.com → New Project → Realtime DB
+// ══════════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL:       "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+
+// ── Admin password (change this before deploying!) ─────────────
+const ADMIN_PW = "DisasterBD2026";
+
+// ── Hazard config ──────────────────────────────────────────────
+const H_ICON  = { TC:'🌀', EQ:'🔴', FL:'💧', VO:'🌋', WF:'🔥', DR:'🏜️' };
+const H_COLOR = { Red:'#ff3b3b', Orange:'#ff8c00', Green:'#00e676' };
+const SEV_ICON = { info:'ℹ️', warning:'⚠️', critical:'🚨' };
+const SEV_LBL  = { info:'INFO', warning:'WARNING', critical:'CRITICAL ALERT' };
+
+// ── Fallback sample data (used if GDACS API is unreachable) ────
+const SAMPLE = [
+  { name:'Cyclone REMAL',    type:'TC', alert:'Red',    country:'Bangladesh', lat:22.3, lng:89.5, date:'2024-05-26', info:'Category 1 cyclone. Landfall near Mongla Port, wind 120 km/h.' },
+  { name:'Flood – Sylhet',   type:'FL', alert:'Red',    country:'Bangladesh', lat:24.9, lng:91.8, date:'2024-05-24', info:'Severe flash flooding in Sylhet division. 50,000 displaced.' },
+  { name:'Quake M5.2',       type:'EQ', alert:'Orange', country:'Bangladesh', lat:23.7, lng:90.4, date:'2024-05-22', info:'Moderate tremor. Felt widely in Dhaka. No major casualties reported.' },
+  { name:'Flood – Khulna',   type:'FL', alert:'Orange', country:'Bangladesh', lat:22.8, lng:89.6, date:'2024-05-23', info:'Coastal flooding. Tidal surge 2.1m above normal.' },
+  { name:'Cyclone DANA',     type:'TC', alert:'Orange', country:'India',      lat:20.1, lng:85.8, date:'2024-05-25', info:'Cyclonic storm moving NE toward Odisha coast.' },
+  { name:'Flood – Assam',    type:'FL', alert:'Red',    country:'India',      lat:26.2, lng:91.7, date:'2024-05-23', info:'Brahmaputra river breach. 120,000 affected in Kamrup.' },
+  { name:'Wildfire – Chin',  type:'WF', alert:'Orange', country:'Myanmar',    lat:22.0, lng:93.5, date:'2024-05-21', info:'Active fire 4,200 ha. NASA VIIRS detection.' },
+  { name:'Cyclone MOCHA',    type:'TC', alert:'Green',  country:'Myanmar',    lat:17.5, lng:94.9, date:'2024-05-20', info:'Weakening system. Wind reduced to 65 km/h.' },
+  { name:'Drought alert',    type:'DR', alert:'Orange', country:'Bangladesh', lat:24.4, lng:89.0, date:'2024-05-18', info:'Below-normal pre-monsoon rainfall in Rajshahi division.' },
+  { name:'Quake M6.1',       type:'EQ', alert:'Red',    country:'Nepal',      lat:27.8, lng:85.3, date:'2024-05-19', info:'Strong quake near Kathmandu Valley. Damage reported.' },
+];
+
+// ── State ─────────────────────────────────────────────────────
+let events = [];
+let filter = 'ALL';
+let markers = L.layerGroup();
+
+// ── Firebase init ─────────────────────────────────────────────
+let db;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  listenAnnouncements();
+} catch(e) {
+  console.warn('Firebase not configured — admin features will be unavailable.');
+}
+
+// ── Map init ──────────────────────────────────────────────────
+const map = L.map('map').setView([23.5, 90.4], 6);
+markers.addTo(map);
+
+const baseLayers = {
+  "Dark":        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution:'© CartoDB', maxZoom:19 }),
+  "Satellite":   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'© Esri', maxZoom:18 }),
+  "Street":      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap', maxZoom:19 }),
+  "Topographic": L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution:'© OpenTopoMap', maxZoom:17 }),
+};
+baseLayers["Dark"].addTo(map);
+L.control.layers(baseLayers, {}, { position:'topright' }).addTo(map);
+L.control.scale({ imperial:false }).addTo(map);
+
+map.on('mousemove', e => {
+  document.getElementById('coords').textContent =
+    `LAT ${e.latlng.lat.toFixed(4)} | LNG ${e.latlng.lng.toFixed(4)}`;
+});
+
+// Bangladesh boundary highlight
+fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
+  .then(r => r.json())
+  .then(d => {
+    const bd = d.features.find(f => f.properties.ISO_A3 === 'BGD');
+    if (bd) L.geoJSON(bd, {
+      style: { color:'#00d4ff', weight:2, fillColor:'#00d4ff', fillOpacity:0.05, dashArray:'6 4' }
+    }).addTo(map).bindTooltip('🇧🇩 Bangladesh', { sticky:true });
+  }).catch(()=>{});
+
+// ── Load GDACS ────────────────────────────────────────────────
+async function loadGDACS() {
+  try {
+    const proxy = 'https://corsproxy.io/?';
+    const api   = 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH';
+    const res   = await fetch(proxy + encodeURIComponent(api),
+                    { signal: AbortSignal.timeout(9000) });
+    const data  = await res.json();
+    const feats = (data.features || []).filter(f => f.geometry?.coordinates);
+
+    if (feats.length < 3) throw new Error('Insufficient data');
+
+    events = feats.map(f => ({
+      name:    f.properties.name || f.properties.eventtype || '—',
+      type:    f.properties.eventtype || 'EQ',
+      alert:   f.properties.alertlevel || 'Green',
+      country: f.properties.country || '—',
+      lat:     f.geometry.coordinates[1],
+      lng:     f.geometry.coordinates[0],
+      date:    (f.properties.fromdate || '').slice(0,10),
+      info:    f.properties.description || '',
+      url:     f.properties.url?.report || null
+    }));
+
+  } catch {
+    events = SAMPLE;
+    document.getElementById('live-label').textContent = 'DEMO';
+    document.querySelector('.live-dot').style.background = 'var(--orange)';
+  }
+
+  render();
+  document.getElementById('loading').style.display = 'none';
+}
+
+// ── Render events ─────────────────────────────────────────────
+function render() {
+  markers.clearLayers();
+  const q = document.getElementById('search').value.toLowerCase().trim();
+
+  const shown = events.filter(e =>
+    (filter === 'ALL' || e.type === filter) &&
+    (!q || e.name.toLowerCase().includes(q) || e.country.toLowerCase().includes(q))
+  );
+
+  document.getElementById('cnt-r').textContent = events.filter(e=>e.alert==='Red').length;
+  document.getElementById('cnt-o').textContent = events.filter(e=>e.alert==='Orange').length;
+  document.getElementById('cnt-g').textContent = events.filter(e=>e.alert==='Green').length;
+
+  const list = document.getElementById('event-list');
+  list.innerHTML = '';
+  document.getElementById('empty-msg').style.display = shown.length ? 'none' : 'block';
+
+  shown.forEach(e => {
+    const col  = H_COLOR[e.alert]  || '#00e676';
+    const icon = H_ICON[e.type]    || '⚠️';
+    const r    = e.alert==='Red' ? 12 : e.alert==='Orange' ? 9 : 7;
+
+    const m = L.circleMarker([e.lat, e.lng], {
+      radius: r, fillColor: col, color:'#fff',
+      weight: 1.5, opacity:1, fillOpacity:0.88
+    }).bindPopup(`
+      <div style="font-family:'IBM Plex Sans',sans-serif;min-width:210px;padding:4px 0">
+        <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${icon} ${e.name}</div>
+        <div style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:0.72rem;
+          font-weight:700;background:${col}22;color:${col};border:1px solid ${col};margin-bottom:8px">
+          ● ${e.alert.toUpperCase()} ALERT
+        </div>
+        <div style="font-size:0.8rem;color:#888;margin-bottom:4px">📍 ${e.country}</div>
+        <div style="font-size:0.8rem;margin-bottom:6px;line-height:1.4">${e.info}</div>
+        <div style="font-size:0.7rem;color:#666">📅 ${e.date}</div>
+        ${e.url ? `<br><a href="${e.url}" target="_blank"
+          style="font-size:0.78rem;color:#00d4ff">🔗 View GDACS Report →</a>` : ''}
+      </div>
+    `);
+
+    markers.addLayer(m);
+
+    // Sidebar card
+    const c = document.createElement('div');
+    c.className = `e-card ${e.alert}`;
+    c.innerHTML = `
+      <div class="e-row1">
+        <span class="e-icon">${icon}</span>
+        <span class="e-name">${e.name}</span>
+        <span class="badge ${e.alert}">${e.alert}</span>
+      </div>
+      <div class="e-meta">
+        <span>📍 ${e.country}</span>
+        <span>📅 ${e.date}</span>
+      </div>
+    `;
+    c.addEventListener('click', () => {
+      map.flyTo([e.lat, e.lng], 8, { duration:1.2 });
+      setTimeout(() => m.openPopup(), 1300);
+    });
+    list.appendChild(c);
+  });
+}
+
+function setFilter(t) {
+  filter = t;
+  document.querySelectorAll('.f-btn').forEach(b =>
+    b.classList.toggle('on', b.dataset.t === t));
+  render();
+}
+
+// ── Firebase announcements ────────────────────────────────────
+function listenAnnouncements() {
+  if (!db) return;
+
+  // Show latest to users (real-time)
+  db.ref('/announcements').orderByChild('ts').limitToLast(1)
+    .on('value', snap => {
+      snap.forEach(c => {
+        const a = c.val();
+        showBanner(a.message, a.severity, a.ts);
+      });
+    });
+
+  // Admin history
+  db.ref('/announcements').orderByChild('ts')
+    .on('value', snap => {
+      const arr = [];
+      snap.forEach(c => arr.push({ key:c.key, ...c.val() }));
+      renderHistory(arr.reverse());
+    });
+}
+
+function showBanner(msg, sev, ts) {
+  const bar = document.getElementById('notif-bar');
+  bar.className = sev;
+  bar.style.display = 'flex';
+  document.getElementById('n-label').textContent = SEV_LBL[sev] || 'ALERT';
+  document.getElementById('n-msg').textContent   = msg;
+  document.getElementById('n-time').textContent  = new Date(ts).toLocaleTimeString();
+}
+
+function dismissNotif() {
+  document.getElementById('notif-bar').style.display = 'none';
+}
+
+function broadcast() {
+  if (!db) { alert('Firebase not configured. Please add your Firebase config first.'); return; }
+  const msg = document.getElementById('ap-msg').value.trim();
+  const sev = document.getElementById('sev-sel').value;
+  if (!msg) { alert('Please enter a message.'); return; }
+
+  db.ref('/announcements').push({ message:msg, severity:sev, ts:Date.now() })
+    .then(() => {
+      document.getElementById('ap-msg').value = '';
+      document.getElementById('char-c').textContent = '0/280';
+    });
+}
+
+function deleteAnn(key) {
+  if (!db) return;
+  if (confirm('Delete this announcement?')) db.ref('/announcements/'+key).remove();
+}
+
+function renderHistory(items) {
+  const el = document.getElementById('hist-list');
+  if (!items.length) { el.innerHTML='<div class="no-history">No announcements yet.</div>'; return; }
+  el.innerHTML = items.slice(0,15).map(a => `
+    <div class="pa ${a.severity}">
+      <div class="pa-top">
+        <span class="pa-sev ${a.severity}">${SEV_ICON[a.severity]} ${a.severity.toUpperCase()}</span>
+        <span class="pa-ts">${new Date(a.ts).toLocaleString()}</span>
+        <button class="pa-del" onclick="deleteAnn('${a.key}')">🗑</button>
+      </div>
+      <div class="pa-txt">${a.message}</div>
+    </div>
+  `).join('');
+}
+
+// ── Admin modal ───────────────────────────────────────────────
+function openModal() {
+  document.getElementById('overlay').classList.add('on');
+  document.getElementById('pw-input').value = '';
+  document.getElementById('pw-error').style.display = 'none';
+  setTimeout(() => document.getElementById('pw-input').focus(), 150);
+}
+function closeModal() { document.getElementById('overlay').classList.remove('on'); }
+function tryLogin() {
+  if (document.getElementById('pw-input').value === ADMIN_PW) {
+    closeModal();
+    document.getElementById('admin-panel').classList.add('open');
+  } else {
+    document.getElementById('pw-error').style.display = 'block';
+    document.getElementById('pw-input').value = '';
+    document.getElementById('pw-input').focus();
+  }
+}
+function closeAdmin() { document.getElementById('admin-panel').classList.remove('open'); }
+
+// Click outside admin panel to close
+document.addEventListener('click', e => {
+  const panel = document.getElementById('admin-panel');
+  if (panel.classList.contains('open') &&
+      !panel.contains(e.target) &&
+      !e.target.matches('.admin-btn'))
+    closeAdmin();
+});
+
+// ── Clock ─────────────────────────────────────────────────────
+function tick() {
+  document.getElementById('time-display').textContent =
+    new Date().toUTCString().replace('GMT','UTC').slice(0,-4);
+}
+tick();
+setInterval(tick, 1000);
+
+// ── Init ──────────────────────────────────────────────────────
+loadGDACS();
+</script>
+</body>
+</html>
