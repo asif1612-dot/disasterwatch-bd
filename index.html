@@ -587,6 +587,23 @@
         <button class="f-btn" data-sev="Orange" onclick="setSeverityFilter('Orange')">High</button>
         <button class="f-btn" data-sev="Green" onclick="setSeverityFilter('Green')">Moderate</button>
       </div>
+      <div style="margin-top:12px;">
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:6px">SHELTER TYPE</label>
+        <select id="shelter-type-sel" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);font-size:0.85rem" onchange="setShelterTypeFilter(this.value)">
+          <option value="ALL">All shelter types</option>
+          <option value="Cyclone Shelter">Cyclone Shelter</option>
+          <option value="Flood Shelter">Flood Shelter</option>
+          <option value="School">School</option>
+          <option value="Community Center">Community Center</option>
+          <option value="Relief Center">Relief Center</option>
+          <option value="Multi-Hazard">Multi-Hazard</option>
+        </select>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px;align-items:center;">
+        <button id="plan-route-btn" class="f-btn" style="flex:1" onclick="toggleRoutePlanning()">Plan Route</button>
+        <button id="clear-route-btn" class="f-btn" style="flex:1" onclick="clearRoute()">Clear</button>
+      </div>
       <div class="sidebar-hint">
         <span>🕒 Window</span>
         <input id="time-slider" type="range" min="1" max="30" value="30" oninput="updateTimeFilter(this.value)"/>
@@ -606,6 +623,9 @@
         <div><span style="display:inline-block;width:12px;height:12px;background:#f97316;margin-right:8px;border-radius:2px"></span>Medium risk</div>
         <div><span style="display:inline-block;width:12px;height:12px;background:#0ea5e9;margin-right:8px;border-radius:2px"></span>Low risk</div>
       </div>
+    </div>
+    <div id="hazard-news" style="padding:12px;">
+      <!-- Hazard news cards will be injected here -->
     </div>
 
     <div id="event-list">
@@ -798,6 +818,13 @@ let events = [];
 let hazardTypeFilter = 'ALL';
 let severityFilter = 'ALL';
 let timeFilterDays = 30;
+let shelterTypeFilter = 'ALL';
+let routePlanningMode = false;
+let routeStart = null;
+let routeEnd = null;
+let routeStartMarker = null;
+let routeEndMarker = null;
+let routePlanningLayer = L.layerGroup();
 let markers = L.layerGroup();
 let severityCycleIndex = { Red: 0, Orange: 0, Green: 0 };
 let rawGDACS = [];
@@ -840,6 +867,7 @@ const overlays = {
   "🚨 Incidents": gdacsLayer,
   "🏠 Shelters": sheltersLayer,
   "🛣️ Emergency Routes": routeLayer,
+  "🧭 Route Planning": routePlanningLayer,
   "⚠️ Hazard Zones": hazardZonesLayer,
   "🗺️ District Risk": districtChoroplethLayer
 };
@@ -985,6 +1013,108 @@ function updateTimeFilter(value) {
 function getEventAgeDays(dateString) {
   const d = new Date(dateString);
   return isNaN(d) ? Infinity : (Date.now() - d.getTime()) / 86400000;
+}
+
+function setShelterTypeFilter(type) {
+  shelterTypeFilter = type;
+  // refresh list and map visibility
+  renderNearbyShelters(document.getElementById('search').value.toLowerCase().trim());
+}
+
+function toggleRoutePlanning() {
+  routePlanningMode = !routePlanningMode;
+  document.getElementById('plan-route-btn').textContent = routePlanningMode ? 'Click map: start' : 'Plan Route';
+  if (routePlanningMode) {
+    routePlanningLayer.clearLayers();
+    routeStart = routeEnd = null;
+    map.on('click', routePlannerClick);
+  } else {
+    map.off('click', routePlannerClick);
+  }
+}
+
+function clearRoute() {
+  routeLayer.clearLayers();
+  routePlanningLayer.clearLayers();
+  if (routeStartMarker) { routePlanningLayer.removeLayer(routeStartMarker); routeStartMarker = null; }
+  if (routeEndMarker) { routePlanningLayer.removeLayer(routeEndMarker); routeEndMarker = null; }
+  routeStart = routeEnd = null;
+  routePlanningMode = false;
+  document.getElementById('plan-route-btn').textContent = 'Plan Route';
+  map.off('click', routePlannerClick);
+}
+
+function routePlannerClick(e) {
+  if (!routeStart) {
+    routeStart = [e.latlng.lat, e.latlng.lng];
+    routeStartMarker = L.circleMarker(routeStart, { radius:6, color:'#475569', fillColor:'#475569', fillOpacity:0.9 }).bindPopup('Start').addTo(routePlanningLayer);
+    routePlanningLayer.addTo(map);
+    document.getElementById('plan-route-btn').textContent = 'Click map: end';
+    return;
+  }
+  if (!routeEnd) {
+    routeEnd = [e.latlng.lat, e.latlng.lng];
+    routeEndMarker = L.circleMarker(routeEnd, { radius:6, color:'#00d4ff', fillColor:'#00d4ff', fillOpacity:0.9 }).bindPopup('End').addTo(routePlanningLayer);
+    routePlanningLayer.addTo(map);
+    // attempt OSRM route
+    (async () => {
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${routeStart[1]},${routeStart[0]};${routeEnd[1]},${routeEnd[0]}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const json = await res.json();
+        const coords = json.routes?.[0]?.geometry?.coordinates;
+        if (coords && coords.length) {
+          const routeCoords = coords.map(c => [c[1], c[0]]);
+          const line = L.polyline(routeCoords, { color:'#00d4ff', weight:4 }).addTo(routeLayer);
+          routeLayer.addTo(map);
+          map.fitBounds(L.latLngBounds(routeCoords), { padding:[80,80] });
+        } else {
+          // fallback straight line
+          L.polyline([routeStart, routeEnd], { color:'#00d4ff', weight:3, dashArray:'6 6' }).addTo(routeLayer);
+          routeLayer.addTo(map);
+          alert('Road routing failed; showing straight-line preview.');
+        }
+      } catch (err) {
+        console.warn('Routing failed', err);
+        L.polyline([routeStart, routeEnd], { color:'#00d4ff', weight:3, dashArray:'6 6' }).addTo(routeLayer);
+        routeLayer.addTo(map);
+        alert('Road routing failed; showing straight-line preview.');
+      } finally {
+        // reset planner mode
+        routePlanningMode = false;
+        document.getElementById('plan-route-btn').textContent = 'Plan Route';
+        map.off('click', routePlannerClick);
+      }
+    })();
+  }
+}
+
+function renderHazardNews() {
+  const container = document.getElementById('hazard-news');
+  if (!container) return;
+  container.innerHTML = '';
+  const source = (rawGDACS && rawGDACS.length) ? rawGDACS : events.map(e => ({ type:'Feature', properties:{ name:e.name, eventtype:e.type, alertlevel:e.alert, fromdate:e.date, description:e.info }, geometry:{ type:'Point', coordinates:[e.lng,e.lat] } }));
+  source.slice(0,6).forEach(f => {
+    const p = f.properties || {};
+    const sev = (p.alertlevel || 'Green').toLowerCase();
+    const card = document.createElement('div');
+    card.className = 'pa ' + (p.alertlevel || 'info');
+    card.style.marginBottom='10px';
+    card.innerHTML = `
+      <div class="pa-top">
+        <span class="pa-sev ${p.alertlevel || 'info'}">${SEV_ICON[p.alertlevel] || '⚠️'} ${ (p.alertlevel || '').toUpperCase() || 'ALERT' }</span>
+        <span class="pa-ts">${(p.fromdate || '').slice(0,10)}</span>
+        <button class="pa-del" onclick="(function(){this.parentElement.parentElement.remove();}).call(this)">✕</button>
+      </div>
+      <div class="pa-txt" style="font-size:0.9rem">${p.name || ''}<div style='font-size:0.82rem;color:var(--text-muted);margin-top:6px'>${(p.description||'').slice(0,140)}</div></div>
+    `;
+    card.addEventListener('click', () => {
+      // fly to on map
+      const coords = f.geometry.coordinates;
+      if (coords && coords.length) map.flyTo([coords[1], coords[0]], 7, { duration:1.2 });
+    });
+    container.appendChild(card);
+  });
 }
 
 function geocodeSearch() {
@@ -1387,6 +1517,7 @@ function render() {
   updateFilterButtonState();
   renderNearbyShelters('');
   renderGDACSLayer();
+  renderHazardNews();
 }
 
 function setFilter(t) {
@@ -1420,6 +1551,11 @@ function renderNearbyShelters(query) {
       s.feature.properties.district.toLowerCase().includes(query) ||
       s.feature.properties.type.toLowerCase().includes(query)
     );
+  }
+
+  // Filter by shelter type selector
+  if (shelterTypeFilter && shelterTypeFilter !== 'ALL') {
+    shown = shown.filter(s => (s.feature.properties.type || '').toLowerCase() === shelterTypeFilter.toLowerCase());
   }
 
   if (userLocation) {
