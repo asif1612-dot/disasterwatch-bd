@@ -333,32 +333,6 @@
       backdrop-filter:blur(6px);
     }
 
-    #map-legend {
-      position:absolute; top:16px; left:16px; z-index:1000;
-      background:rgba(255,255,255,0.95); border:1px solid var(--border);
-      box-shadow:0 14px 40px rgba(15,23,42,0.12);
-      border-radius:12px; padding:10px 12px;
-      font-family:var(--font-head); color:var(--text);
-      min-width:170px;
-    }
-    #map-legend .legend-title {
-      font-size:0.8rem; font-weight:800; letter-spacing:0.08em;
-      margin-bottom:8px; color:var(--cyan);
-    }
-    #map-legend .legend-items { display:grid; gap:6px; }
-    #map-legend .legend-item {
-      display:flex; align-items:center; gap:8px; padding:6px 8px;
-      border-radius:8px; background:var(--surface3); border:1px solid var(--border2);
-      font-size:0.78rem;
-    }
-    #map-legend .legend-mark { width:12px; height:12px; border-radius:50%; display:inline-block; flex-shrink:0; }
-    #map-legend .legend-all { background: linear-gradient(135deg, var(--cyan), var(--purple)); }
-    #map-legend .legend-tc  { background: var(--purple); }
-    #map-legend .legend-eq  { background: var(--red); }
-    #map-legend .legend-fl  { background: #29b6f6; }
-    #map-legend .legend-vo  { background: var(--orange); }
-    #map-legend .legend-wf  { background: var(--yellow); }
-
     /* ── Loading ─────────────────────────────────────────────────── */
     #loading {
       position:absolute; top:50%; left:calc(290px + 50%); transform:translate(-50%,-50%);
@@ -522,16 +496,15 @@
 
 <!-- ── Header ─────────────────────────────────────────────────────── -->
 <div id="header">
-  <div class="logo-mark">🌐</div>
+  <div class="logo-mark">�</div>
   <div class="brand">
-    <h1>DISASTER<span class="watch">WATCH</span><span class="bd">BD</span></h1>
-    <div class="sub">MULTI-HAZARD EARLY WARNING SYSTEM · POWERED BY GDACS</div>
+    <h1>SHELTER<span class="watch">FINDER</span><span class="bd">BD</span></h1>
+    <div class="sub">EMERGENCY SHELTER LOCATOR · SAFE HAVEN LOCATIONS</div>
   </div>
   <div class="header-spacer"></div>
   <div id="time-display">—</div>
   <div class="live-pill"><div class="live-dot"></div><span id="live-label">LIVE</span></div>
-  <button class="admin-btn" onclick="refreshData()" title="Refresh GDACS data">🔄 REFRESH</button>
-  <button class="admin-btn" onclick="openModal()">🔐 ADMIN</button>
+  <button class="admin-btn" onclick="openModal()">🔐 BROADCAST</button>
 </div>
 
 <!-- ── Main App ───────────────────────────────────────────────────── -->
@@ -540,43 +513,22 @@
   <!-- Sidebar -->
   <div id="sidebar">
     <div class="sidebar-section">
-      <input id="search" type="text" placeholder="Search events, countries…" 
-        oninput="render()" 
-        onkeydown="if(event.key==='Enter') searchEvents()"/>
-      <div class="filter-grid">
-        <button class="f-btn on" data-t="ALL" onclick="setFilter('ALL')">⚡ ALL</button>
-        <button class="f-btn"    data-t="TC"  onclick="setFilter('TC')">🌀 CYCLONE</button>
-        <button class="f-btn"    data-t="EQ"  onclick="setFilter('EQ')">🔴 QUAKE</button>
-        <button class="f-btn"    data-t="FL"  onclick="setFilter('FL')">💧 FLOOD</button>
-        <button class="f-btn"    data-t="VO"  onclick="setFilter('VO')">🌋 VOLCANO</button>
-        <button class="f-btn"    data-t="WF"  onclick="setFilter('WF')">🔥 WILDFIRE</button>
-      </div>
+      <input id="search" type="text" placeholder="Search location, district, shelter name…" 
+        oninput="searchSheltersByLocation()" 
+        onkeydown="if(event.key==='Enter') searchSheltersByLocation()"/>
     </div>
 
       <div class="stats-strip">
-        <div class="stat r" onclick="focusSeverity('Red')"><div class="n" id="cnt-r">–</div><div class="l">Red</div></div>
-        <div class="stat o" onclick="focusSeverity('Orange')"><div class="n" id="cnt-o">–</div><div class="l">Orange</div></div>
-        <div class="stat g" onclick="focusSeverity('Green')"><div class="n" id="cnt-g">–</div><div class="l">Green</div></div>
+        <div class="stat g" onclick="showAllShelters()"><div class="n" id="cnt-shelters">–</div><div class="l">Shelters Nearby</div></div>
       </div>
 
     <div id="event-list">
-      <div id="empty-msg">No events match your filter.</div>
+      <div id="empty-msg">No shelters match your search.</div>
     </div>
   </div>
 
   <!-- Map -->
   <div id="map"></div>
-  <div id="map-legend">
-    <div class="legend-title">MAP SYMBOLOGY</div>
-    <div class="legend-items">
-      <div class="legend-item"><span class="legend-mark legend-all"></span> ⚡ ALL</div>
-      <div class="legend-item"><span class="legend-mark legend-tc"></span> 🌀 CYCLONE</div>
-      <div class="legend-item"><span class="legend-mark legend-eq"></span> 🔴 QUAKE</div>
-      <div class="legend-item"><span class="legend-mark legend-fl"></span> 💧 FLOOD</div>
-      <div class="legend-item"><span class="legend-mark legend-vo"></span> 🌋 VOLCANO</div>
-      <div class="legend-item"><span class="legend-mark legend-wf"></span> 🔥 WILDFIRE</div>
-    </div>
-  </div>
   
   <div id="coords">LAT – | LNG –</div>
 
@@ -662,6 +614,16 @@ const H_COLOR = { Red:'#ff3b3b', Orange:'#ff8c00', Green:'#00e676' };
 const SEV_ICON = { info:'ℹ️', warning:'⚠️', critical:'🚨' };
 const SEV_LBL  = { info:'INFO', warning:'WARNING', critical:'CRITICAL ALERT' };
 
+// ── Hazard type colors (for symbology) ──────────────────────────
+const HAZARD_COLOR = {
+  TC: { primary: '#8b5cf6', rgba: 'rgba(139,92,246,0.15)' },  // purple cyclone
+  EQ: { primary: '#dc2626', rgba: 'rgba(220,38,38,0.15)' },   // red earthquake
+  FL: { primary: '#0ea5e9', rgba: 'rgba(14,165,233,0.15)' },   // cyan flood
+  VO: { primary: '#f97316', rgba: 'rgba(249,115,22,0.18)' },   // orange volcano
+  WF: { primary: '#eab308', rgba: 'rgba(234,179,8,0.15)' },    // yellow fire
+  DR: { primary: '#ca8a04', rgba: 'rgba(202,138,4,0.15)' }     // drought
+};
+
 // ── Fallback sample data (used if GDACS API is unreachable) ────
 const SAMPLE = [
   { name:'Cyclone REMAL',    type:'TC', alert:'Red',    country:'Bangladesh', lat:22.3, lng:89.5, date:'2024-05-26', info:'Category 1 cyclone. Landfall near Mongla Port, wind 120 km/h.' },
@@ -676,6 +638,44 @@ const SAMPLE = [
   { name:'Quake M6.1',       type:'EQ', alert:'Red',    country:'Nepal',      lat:27.8, lng:85.3, date:'2024-05-19', info:'Strong quake near Kathmandu Valley. Damage reported.' },
 ];
 
+// ── Bangladesh Shelter Locations (GeoJSON FeatureCollection) ─────
+const SHELTERS_GEOJSON = {
+  type: "FeatureCollection",
+  features: [
+    // Dhaka
+    { type: "Feature", properties: { name: "Ashok Hall Cyclone Shelter", district: "Dhaka", type: "Cyclone Shelter", capacity: 1500, phone: "02-9662341" }, geometry: { type: "Point", coordinates: [90.4144, 23.7808] } },
+    { type: "Feature", properties: { name: "Gulshan Community Center", district: "Dhaka", type: "Community Center", capacity: 800, phone: "02-8813000" }, geometry: { type: "Point", coordinates: [90.4179, 23.8013] } },
+    { type: "Feature", properties: { name: "Mirpur School Complex", district: "Dhaka", type: "School", capacity: 1200, phone: "02-9010500" }, geometry: { type: "Point", coordinates: [90.3667, 23.8333] } },
+    
+    // Chittagong
+    { type: "Feature", properties: { name: "Chittagong Cyclone Center", district: "Chittagong", type: "Cyclone Shelter", capacity: 2500, phone: "031-2503100" }, geometry: { type: "Point", coordinates: [91.8331, 22.3569] } },
+    { type: "Feature", properties: { name: "Pahartali Relief Camp", district: "Chittagong", type: "Relief Center", capacity: 3000, phone: "031-2511888" }, geometry: { type: "Point", coordinates: [91.8500, 22.3800] } },
+    { type: "Feature", properties: { name: "Bayazid School Shelter", district: "Chittagong", type: "School", capacity: 1000, phone: "031-2410000" }, geometry: { type: "Point", coordinates: [91.8199, 22.3458] } },
+    
+    // Cox's Bazar
+    { type: "Feature", properties: { name: "Cox's Bazar Cyclone Shelter", district: "Cox's Bazar", type: "Cyclone Shelter", capacity: 2000, phone: "0341-52500" }, geometry: { type: "Point", coordinates: [91.9680, 21.4394] } },
+    { type: "Feature", properties: { name: "Moheshkhali Community Center", district: "Cox's Bazar", type: "Community Center", capacity: 1200, phone: "0341-55000" }, geometry: { type: "Point", coordinates: [92.1500, 21.5200] } },
+    
+    // Khulna (Coastal)
+    { type: "Feature", properties: { name: "Khulna Flood Shelter", district: "Khulna", type: "Flood Shelter", capacity: 1800, phone: "041-743100" }, geometry: { type: "Point", coordinates: [89.5644, 22.8456] } },
+    { type: "Feature", properties: { name: "Satkhira Relief Camp", district: "Satkhira", type: "Relief Center", capacity: 1500, phone: "0471-62000" }, geometry: { type: "Point", coordinates: [89.0705, 22.7185] } },
+    
+    // Sylhet (Flood-prone)
+    { type: "Feature", properties: { name: "Sylhet Flood Relief Center", district: "Sylhet", type: "Flood Shelter", capacity: 1600, phone: "0821-717170" }, geometry: { type: "Point", coordinates: [91.8668, 24.8801] } },
+    { type: "Feature", properties: { name: "Sunamganj Community Center", district: "Sunamganj", type: "Community Center", capacity: 1200, phone: "0831-50000" }, geometry: { type: "Point", coordinates: [91.3960, 25.0088] } },
+    
+    // Barisal (Flood/Cyclone)
+    { type: "Feature", properties: { name: "Barisal Cyclone & Flood Center", district: "Barisal", type: "Multi-Hazard", capacity: 2000, phone: "0431-261800" }, geometry: { type: "Point", coordinates: [90.3636, 22.7010] } },
+    { type: "Feature", properties: { name: "Bhola Relief Shelter", district: "Bhola", type: "Cyclone Shelter", capacity: 1500, phone: "0482-56000" }, geometry: { type: "Point", coordinates: [90.6554, 22.5881] } },
+    
+    // Rajshahi
+    { type: "Feature", properties: { name: "Rajshahi Community Center", district: "Rajshahi", type: "Community Center", capacity: 900, phone: "0721-775775" }, geometry: { type: "Point", coordinates: [88.5713, 24.3745] } },
+    
+    // Chittagong Hill Tracts
+    { type: "Feature", properties: { name: "Rangamati Relief Center", district: "Rangamati", type: "Relief Center", capacity: 800, phone: "0351-62500" }, geometry: { type: "Point", coordinates: [92.2992, 22.6988] } }
+  ]
+};
+
 // ── State ─────────────────────────────────────────────────────
 let events = [];
 let filter = 'ALL';
@@ -683,6 +683,11 @@ let markers = L.layerGroup();
 let severityCycleIndex = { Red: 0, Orange: 0, Green: 0 };
 let rawGDACS = [];
 let gdacsLayer = L.layerGroup();
+let sheltersLayer = L.layerGroup();
+let routeLayer = L.layerGroup();
+let hazardZonesLayer = L.layerGroup();
+let sheltersData = [];
+let activeRoute = null;
 
 // ── Firebase init ─────────────────────────────────────────────
 let db;
@@ -708,6 +713,15 @@ baseLayers["Street"].addTo(map);
 L.control.layers(baseLayers, {}, { position:'topright' }).addTo(map);
 L.control.scale({ imperial:false }).addTo(map);
 
+// Add layer group controls
+const overlays = {
+  "🚨 Incidents": markers,
+  "🏠 Shelters": sheltersLayer,
+  "🛣️ Emergency Routes": routeLayer,
+  "⚠️ Hazard Zones": hazardZonesLayer
+};
+L.control.layers({}, overlays, { position:'topleft', collapsed:false }).addTo(map);
+
 map.on('mousemove', e => {
   document.getElementById('coords').textContent =
     `LAT ${e.latlng.lat.toFixed(4)} | LNG ${e.latlng.lng.toFixed(4)}`;
@@ -722,6 +736,195 @@ fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/coun
       style: { color:'#00d4ff', weight:2, fillColor:'#00d4ff', fillOpacity:0.05, dashArray:'6 4' }
     }).addTo(map).bindTooltip('🇧🇩 Bangladesh', { sticky:true });
   }).catch(()=>{});
+
+// ── Create custom SVG marker for hazards ──────────────────────
+function createIncidentMarker(type, alert) {
+  const color = HAZARD_COLOR[type]?.primary || '#00d4ff';
+  const size = alert === 'Red' ? 48 : alert === 'Orange' ? 40 : 32;
+  const svgUrl = `data:image/svg+xml;base64,${btoa(`
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        ${alert === 'Red' ? `<style>@keyframes pulse { 0% { r: ${size/2.2}; } 50% { r: ${size/1.8}; } 100% { r: ${size/2.2}; } }</style>` : ''}
+      </defs>
+      <circle cx="50" cy="50" r="${size/2.2}" fill="${color}" opacity="0.3" ${alert === 'Red' ? 'style="animation: pulse 1.5s infinite"' : ''}/>
+      <circle cx="50" cy="50" r="${size/2.8}" fill="${color}" opacity="0.6"/>
+      <circle cx="50" cy="50" r="${size/3.8}" fill="white" filter="url(#glow)"/>
+      <text x="50" y="55" font-size="${size/2}" text-anchor="middle" dominant-baseline="middle" font-weight="bold">${H_ICON[type] || '⚠️'}</text>
+    </svg>
+  `)}`;
+  
+  return L.icon({
+    iconUrl: svgUrl,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2],
+    popupAnchor: [0, -size/2]
+  });
+}
+
+// ── Create custom SVG marker for shelters ────────────────────
+function createShelterMarker() {
+  const size = 36;
+  const svgUrl = `data:image/svg+xml;base64,${btoa(`
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+        </filter>
+      </defs>
+      <rect x="25" y="35" width="50" height="45" rx="3" fill="#16a34a" opacity="0.2"/>
+      <polygon points="50,20 75,40 70,40 70,75 30,75 30,40 25,40" fill="#16a34a" filter="url(#shadow)"/>
+      <circle cx="50" cy="55" r="8" fill="white" opacity="0.9"/>
+      <rect x="38" y="65" width="24" height="6" fill="#16a34a" opacity="0.7"/>
+    </svg>
+  `)}`;
+  
+  return L.icon({
+    iconUrl: svgUrl,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size],
+    popupAnchor: [0, -size]
+  });
+}
+
+// ── Load and display shelters ────────────────────────────────
+function loadShelters() {
+  sheltersLayer.clearLayers();
+  const shelterIcon = createShelterMarker();
+  
+  SHELTERS_GEOJSON.features.forEach(feature => {
+    const props = feature.properties;
+    const coords = feature.geometry.coordinates;
+    const latlng = [coords[1], coords[0]];
+    
+    const marker = L.marker(latlng, { icon: shelterIcon })
+      .bindPopup(`
+        <div style="font-family:'IBM Plex Sans',sans-serif;min-width:220px;padding:6px 0">
+          <div style="font-size:1.05rem;font-weight:700;margin-bottom:5px">🏠 ${props.name}</div>
+          <div style="font-size:0.85rem;color:#16a34a;font-weight:600;margin-bottom:8px">● ${props.type}</div>
+          <table style="width:100%;font-size:0.8rem;line-height:1.6">
+            <tr><td><strong>📍 District:</strong></td><td>${props.district}</td></tr>
+            <tr><td><strong>👥 Capacity:</strong></td><td>${props.capacity.toLocaleString()} persons</td></tr>
+            <tr><td><strong>📞 Phone:</strong></td><td><a href="tel:${props.phone}">${props.phone}</a></td></tr>
+          </table>
+        </div>
+      `);
+    
+    sheltersData.push({ marker, feature, latlng });
+    sheltersLayer.addLayer(marker);
+  });
+  
+  sheltersLayer.addTo(map);
+}
+
+// ── Calculate distance between two points (Haversine) ────────
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// ── Find nearest shelter to incident ─────────────────────────
+function findNearestShelter(incidentLat, incidentLng) {
+  if (!sheltersData.length) return null;
+  
+  let nearest = null;
+  let minDist = Infinity;
+  
+  sheltersData.forEach(shelter => {
+    const dist = getDistance(incidentLat, incidentLng, shelter.latlng[0], shelter.latlng[1]);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = { ...shelter, distance: dist };
+    }
+  });
+  
+  return nearest;
+}
+
+// ── Draw emergency route (simple line to nearest shelter) ────
+function drawEmergencyRoute(incidentLat, incidentLng, shelterLat, shelterLng, incidentName, shelterName) {
+  routeLayer.clearLayers();
+  activeRoute = { from: [incidentLat, incidentLng], to: [shelterLat, shelterLng] };
+  
+  const distance = getDistance(incidentLat, incidentLng, shelterLat, shelterLng);
+  const estimatedTime = Math.ceil((distance / 50) * 60); // Assume avg 50 km/h on roads
+  
+  // Draw route line with arrow
+  const routeLine = L.polyline(
+    [[incidentLat, incidentLng], [shelterLat, shelterLng]],
+    { color:'#00d4ff', weight:3, opacity:0.8, dashArray:'8 4', lineCap:'round' }
+  ).bindPopup(`
+    <div style="font-family:'IBM Plex Sans',sans-serif;padding:6px 0">
+      <div style="font-weight:700;margin-bottom:8px">🛣️ Emergency Route</div>
+      <table style="font-size:0.8rem;line-height:1.8">
+        <tr><td><strong>From:</strong></td><td>${incidentName}</td></tr>
+        <tr><td><strong>To:</strong></td><td>${shelterName}</td></tr>
+        <tr><td><strong>📏 Distance:</strong></td><td><strong style="color:#0ea5e9">${distance.toFixed(1)} km</strong></td></tr>
+        <tr><td><strong>⏱️ Est. Time:</strong></td><td><strong style="color:#0ea5e9">${estimatedTime} min</strong></td></tr>
+        <tr><td colspan="2" style="color:#666;font-size:0.72rem;padding-top:4px">⚠️ Route shows direct path. Check road conditions before travel.</td></tr>
+      </table>
+    </div>
+  `);
+  
+  routeLine.addTo(routeLayer);
+  routeLayer.addTo(map);
+  routeLine.openPopup([incidentLat, incidentLng]);
+  
+  // Pan map to show full route
+  const bounds = L.latLngBounds([[incidentLat, incidentLng], [shelterLat, shelterLng]]);
+  map.fitBounds(bounds, { padding: [80, 80], animate: true });
+}
+
+// ── Load sample hazard zones (polygons) for Bangladesh ───────
+function loadHazardZones() {
+  hazardZonesLayer.clearLayers();
+  
+  // Cyclone risk zones (coastal)
+  const cyclonerisk = [
+    { lat: [22.5, 22.8, 22.4, 22.2], lng: [89.2, 89.8, 90.2, 89.5] },
+    { lat: [21.8, 22.2, 21.9, 21.7], lng: [91.5, 92.1, 92.4, 91.8] }
+  ];
+  
+  cyclonerisk.forEach(zone => {
+    const bounds = [];
+    for (let i = 0; i < zone.lat.length; i++) {
+      bounds.push([zone.lat[i], zone.lng[i]]);
+    }
+    L.polygon(bounds, {
+      color: '#8b5cf6', weight: 2, fillColor: '#8b5cf6', fillOpacity: 0.08, dashArray: '4 4'
+    }).bindTooltip('🌀 Cyclone Risk Zone', { sticky: true }).addTo(hazardZonesLayer);
+  });
+  
+  // Flood-prone areas (low-lying regions)
+  const floodrisk = [
+    { lat: [24.8, 25.1, 24.9, 24.7], lng: [91.6, 92.0, 92.3, 91.9] },
+    { lat: [23.0, 23.2, 23.1, 22.9], lng: [90.1, 90.5, 90.7, 90.3] }
+  ];
+  
+  floodrisk.forEach(zone => {
+    const bounds = [];
+    for (let i = 0; i < zone.lat.length; i++) {
+      bounds.push([zone.lat[i], zone.lng[i]]);
+    }
+    L.polygon(bounds, {
+      color: '#0ea5e9', weight: 2, fillColor: '#0ea5e9', fillOpacity: 0.08, dashArray: '4 4'
+    }).bindTooltip('💧 Flood-Prone Area', { sticky: true }).addTo(hazardZonesLayer);
+  });
+  
+  hazardZonesLayer.addTo(map);
+}
 
 // ── Load GDACS ────────────────────────────────────────────────
 async function loadGDACS() {
@@ -851,128 +1054,117 @@ function focusSeverity(level) {
 }
 
 // ── Render events ─────────────────────────────────────────────
-// Render raw GDACS GeoJSON features with symbology
+// Render raw GDACS GeoJSON features with custom symbology
 function renderGDACSLayer() {
   gdacsLayer.clearLayers();
   if (!rawGDACS || !rawGDACS.length) return;
 
-  const gj = L.geoJSON(rawGDACS, {
-    style: f => {
-      const a = (f.properties.alertlevel || 'Green');
-      const color = H_COLOR[a] || H_COLOR.Green;
-      return { color: color, weight: 2, fillColor: color + '22', fillOpacity: 0.18 };
-    },
-    pointToLayer: (f, latlng) => {
-      const a = (f.properties.alertlevel || 'Green');
-      const col = H_COLOR[a] || H_COLOR.Green;
-      const r = a === 'Red' ? 12 : a === 'Orange' ? 9 : 7;
-      const m = L.circleMarker(latlng, { radius: r, fillColor: col, color: '#fff', weight: 1.5, fillOpacity: 0.92 });
-      f._marker = m;
-      return m;
-    },
-    onEachFeature: (f, layer) => {
-      const p = f.properties || {};
-      const name = p.name || p.eventtype || 'GDACS event';
-      const alert = p.alertlevel || 'Green';
-      const info = p.description || '';
-      const url = (p.url && (p.url.report || p.url)) || null;
-      layer.bindPopup(`
-        <div style="font-family:'IBM Plex Sans',sans-serif;min-width:210px;padding:6px 0">
-          <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${name}</div>
-          <div style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:0.72rem;
-            font-weight:700;background:${H_COLOR[alert] || '#00e676'}22;color:${H_COLOR[alert] || '#00e676'};border:1px solid ${H_COLOR[alert] || '#00e676'};margin-bottom:8px">
-            ● ${alert.toUpperCase()} ALERT
-          </div>
-          <div style="font-size:0.8rem;color:#888;margin-bottom:6px">${info}</div>
-          <div style="font-size:0.7rem;color:#666">${url ? `<a href='${url}' target='_blank'>GDACS report</a>` : ''}</div>
+  rawGDACS.forEach(f => {
+    const p = f.properties || {};
+    const type = p.eventtype || 'EQ';
+    const alert = p.alertlevel || 'Green';
+    const name = p.name || p.eventtype || 'GDACS event';
+    const info = p.description || '';
+    const url = (p.url && (p.url.report || p.url)) || null;
+    const coords = f.geometry.coordinates;
+    const latlng = [coords[1], coords[0]];
+    
+    const customIcon = createIncidentMarker(type, alert);
+    const marker = L.marker(latlng, { icon: customIcon });
+    
+    // Find nearest shelter
+    const nearestShelter = findNearestShelter(latlng[0], latlng[1]);
+    const shelterInfo = nearestShelter ? 
+      `<div style="background:#e6f9f0;border-left:3px solid #16a34a;padding:8px;margin-top:8px;border-radius:3px">
+        <div style="font-weight:600;color:#16a34a;font-size:0.85rem">🏠 Nearest Shelter</div>
+        <div style="font-size:0.8rem;color:#333;margin-top:3px">${nearestShelter.feature.properties.name}</div>
+        <div style="font-size:0.75rem;color:#666">📍 ${nearestShelter.distance.toFixed(1)} km away</div>
+      </div>` : '';
+    
+    const popupContent = `
+      <div style="font-family:'IBM Plex Sans',sans-serif;min-width:240px;padding:6px 0">
+        <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${H_ICON[type] || '⚠️'} ${name}</div>
+        <div style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:0.72rem;
+          font-weight:700;background:${H_COLOR[alert] || '#00e676'}22;color:${HAZARD_COLOR[type]?.primary || '#00d4ff'};border:1px solid ${HAZARD_COLOR[type]?.primary || '#00d4ff'};margin-bottom:8px">
+          ● ${alert.toUpperCase()} ALERT
         </div>
-      `);
-      layer.on('click', () => {
-        // store reference for programmatic popup control
-        f._marker = layer;
-      });
-    }
+        <div style="font-size:0.8rem;color:#888;margin-bottom:6px;line-height:1.4">${info}</div>
+        ${shelterInfo}
+        <div style="margin-top:8px;display:flex;gap:6px">
+          ${nearestShelter ? `<button onclick="drawEmergencyRoute(${latlng[0]}, ${latlng[1]}, ${nearestShelter.latlng[0]}, ${nearestShelter.latlng[1]}, '${name.replace(/'/g, "\\'")}', '${nearestShelter.feature.properties.name.replace(/'/g, "\\'")}')" style="flex:1;padding:6px;background:#00d4ff;color:#080c14;border:none;border-radius:3px;cursor:pointer;font-weight:600;font-size:0.78rem">🛣️ SHOW ROUTE</button>` : ''}
+          ${url ? `<button onclick="window.open('${url}','_blank')" style="flex:1;padding:6px;background:#475569;color:#fff;border:none;border-radius:3px;cursor:pointer;font-weight:600;font-size:0.78rem">📊 GDACS</button>` : ''}
+        </div>
+      </div>
+    `;
+    
+    marker.bindPopup(popupContent);
+    f._marker = marker;
+    gdacsLayer.addLayer(marker);
   });
-
-  gdacsLayer.addLayer(gj);
+  
   if (!map.hasLayer(gdacsLayer)) gdacsLayer.addTo(map);
-  try { map.fitBounds(gj.getBounds().pad ? gj.getBounds().pad(0.18) : gj.getBounds(), { padding: [50, 50] }); } catch(e) {}
+  try {
+    const bounds = L.latLngBounds(rawGDACS.map(f => {
+      const c = f.geometry.coordinates;
+      return [c[1], c[0]];
+    }));
+    map.fitBounds(bounds.pad ? bounds.pad(0.18) : bounds, { padding: [50, 50] });
+  } catch(e) {}
 }
 
 function render() {
-  markers.clearLayers();
-  // Clear previous GDACS layer visuals unless we're about to render them
-  if (gdacsLayer) gdacsLayer.clearLayers();
+  // Initialize with nearby shelters display
+  renderNearbyShelters('');
+}
+
+function setFilter(t) {
+  // Removed - location search only
+}
+
+// ── Search for shelters by location ───────────────────────
+function searchSheltersByLocation() {
   const q = document.getElementById('search').value.toLowerCase().trim();
+  renderNearbyShelters(q);
+}
 
-  const shown = events.filter(e =>
-    (filter === 'ALL' || e.type === filter) &&
-    (!q || e.name.toLowerCase().includes(q) || e.country.toLowerCase().includes(q))
-  );
+function showAllShelters() {
+  document.getElementById('search').value = '';
+  renderNearbyShelters('');
+}
 
-  document.getElementById('cnt-r').textContent = events.filter(e=>e.alert==='Red').length;
-  document.getElementById('cnt-o').textContent = events.filter(e=>e.alert==='Orange').length;
-  document.getElementById('cnt-g').textContent = events.filter(e=>e.alert==='Green').length;
-
+function renderNearbyShelters(query) {
   const list = document.getElementById('event-list');
   list.innerHTML = '';
-  document.getElementById('empty-msg').style.display = shown.length ? 'none' : 'block';
-
-  // If ALL filter is active and we have raw GDACS features, render the GeoJSON symbology
-  if (filter === 'ALL' && rawGDACS && rawGDACS.length) {
-    renderGDACSLayer();
+  
+  // Filter shelters by location/district/name
+  let shown = sheltersData;
+  if (query) {
+    shown = sheltersData.filter(s => 
+      s.feature.properties.name.toLowerCase().includes(query) ||
+      s.feature.properties.district.toLowerCase().includes(query) ||
+      s.feature.properties.type.toLowerCase().includes(query)
+    );
   }
-
-  shown.forEach(e => {
-    const col  = H_COLOR[e.alert]  || '#00e676';
-    const icon = H_ICON[e.type]    || '⚠️';
-    const r    = e.alert==='Red' ? 12 : e.alert==='Orange' ? 9 : 7;
-    // Create map marker (unless we're showing GDACS GeoJSON for ALL)
-    let m = null;
-    if (!(filter === 'ALL' && rawGDACS && rawGDACS.length)) {
-      m = L.circleMarker([e.lat, e.lng], {
-      radius: r, fillColor: col, color:'#fff',
-      weight: 1.5, opacity:1, fillOpacity:0.88
-    }).on('click', () => {
-      document.querySelectorAll('.e-card').forEach(card => card.style.background = '');
-    }).bindPopup(`
-      <div style="font-family:'IBM Plex Sans',sans-serif;min-width:210px;padding:4px 0">
-        <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">${icon} ${e.name}</div>
-        <div style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:0.72rem;
-          font-weight:700;background:${col}22;color:${col};border:1px solid ${col};margin-bottom:8px">
-          ● ${e.alert.toUpperCase()} ALERT
-        </div>
-        <div style="font-size:0.8rem;color:#888;margin-bottom:4px">📍 ${e.country}</div>
-        <div style="font-size:0.8rem;margin-bottom:6px;line-height:1.4">${e.info}</div>
-        <div style="font-size:0.7rem;color:#666">📅 ${e.date}</div>
-        <div style="font-size:0.7rem;color:#666">🧭 Lat: ${e.lat.toFixed(4)}, Lng: ${e.lng.toFixed(4)}</div>
-        ${e.url ? `<br><a href="${e.url}" target="_blank"
-          style="font-size:0.78rem;color:#00d4ff;text-decoration:none">🔗 View GDACS Report →</a>` : ''}
-      </div>
-    `);
-
-      markers.addLayer(m);
-      // attach marker to event so we can open its popup later
-      e._marker = m;
-    } else {
-      // try to find matching raw GDACS feature and attach its marker for popup control
-      const match = rawGDACS.find(f => (f.properties && (f.properties.name === e.name || f.properties.eventtype === e.type)));
-      if (match) e._marker = match._marker || null;
-    }
-
-    // Create sidebar card with click handler
+  
+  // Update count
+  document.getElementById('cnt-shelters').textContent = shown.length;
+  document.getElementById('empty-msg').style.display = shown.length ? 'none' : 'block';
+  
+  // Display shelters in sidebar
+  shown.forEach(s => {
+    const props = s.feature.properties;
     const c = document.createElement('div');
-    c.className = `e-card ${e.alert}`;
+    c.className = 'e-card Green';
     c.style.cursor = 'pointer';
     c.innerHTML = `
       <div class="e-row1">
-        <span class="e-icon">${icon}</span>
-        <span class="e-name">${e.name}</span>
-        <span class="badge ${e.alert}">${e.alert}</span>
+        <span class="e-icon">🏠</span>
+        <span class="e-name">${props.name}</span>
+        <span class="badge Green">${props.type}</span>
       </div>
       <div class="e-meta">
-        <span>📍 ${e.country}</span>
-        <span>📅 ${e.date}</span>
+        <span>📍 ${props.district}</span>
+        <span>👥 ${props.capacity.toLocaleString()}</span>
       </div>
     `;
     
@@ -981,11 +1173,11 @@ function render() {
       // Highlight the card
       document.querySelectorAll('.e-card').forEach(card => card.style.opacity = '0.6');
       c.style.opacity = '1';
-      // Fly to location on map
-      map.flyTo([e.lat, e.lng], 8, { duration:1.2 });
+      // Fly to shelter on map
+      map.flyTo([s.latlng[0], s.latlng[1]], 9, { duration: 1.2 });
       // Open popup after flight
       setTimeout(() => {
-        m.openPopup([e.lat, e.lng]);
+        s.marker.openPopup();
       }, 1300);
     });
     
@@ -1005,27 +1197,9 @@ function render() {
   });
 }
 
-function setFilter(t) {
-  filter = t;
-  document.querySelectorAll('.f-btn').forEach(b =>
-    b.classList.toggle('on', b.dataset.t === t));
-  document.querySelectorAll('.e-card').forEach(card => card.style.opacity = '1');
-  render();
-}
-
 // ── Search functionality ────────────────────────────────────
 function searchEvents() {
-  const q = document.getElementById('search').value.toLowerCase().trim();
-  if (!q) return;
-  
-  const matching = events.filter(e =>
-    e.name.toLowerCase().includes(q) || e.country.toLowerCase().includes(q)
-  );
-  
-  if (matching.length > 0) {
-    const e = matching[0];
-    map.flyTo([e.lat, e.lng], 8, { duration:1.2 });
-  }
+  // Removed - using location search only
 }
 
 // ── Firebase announcements ────────────────────────────────────
@@ -1134,7 +1308,10 @@ tick();
 setInterval(tick, 1000);
 
 // ── Init ──────────────────────────────────────────────────────
-loadGDACS();
+loadShelters();
+loadHazardZones();
+render(); // Show all shelters on startup
+
 </script>
 </body>
 </html>
